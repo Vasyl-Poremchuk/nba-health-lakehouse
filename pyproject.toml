@@ -1,0 +1,16 @@
+[project]
+name = "nba-health-lakehouse"
+version = "0.1.0"
+description = "End-to-end NBA player health & workload lakehouse. Bronze/silver/gold on AWS S3, dbt, Airflow, Databricks."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "commitizen>=4.16.2",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"

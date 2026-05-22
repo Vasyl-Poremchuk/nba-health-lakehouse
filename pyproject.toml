@@ -15,6 +15,7 @@ dev = [
     "commitizen>=4.16.2",
     "mypy>=2.1.0",
     "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
     "ruff>=0.15.13",
 ]
 
@@ -66,3 +67,8 @@ module = [
     "great_expectations.*",
 ]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"

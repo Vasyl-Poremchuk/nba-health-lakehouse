@@ -19,3 +19,6 @@ format:  ## Auto-format with ruff
 clean:  ## Remove caches and build aftifacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+test:  ## Run the test suite
+	uv run pytest -v

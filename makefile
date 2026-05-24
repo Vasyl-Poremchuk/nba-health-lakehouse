@@ -16,7 +16,7 @@ lint:  ## Lint with ruff
 format:  ## Auto-format with ruff
 	uv run ruff format .
 
-clean:  ## Remove caches and build aftifacts
+clean:  ## Remove caches and build artifacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build
 	find . -type d -name __pycache__ -exec rm -rf {} +
 

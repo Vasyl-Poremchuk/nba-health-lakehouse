@@ -8,7 +8,7 @@ End-to-end data lakehouse for NBA player health and workload analytics, built on
 
 ## Features
 
-## Tech Stask
+## Tech Stack
 
 ## License
 

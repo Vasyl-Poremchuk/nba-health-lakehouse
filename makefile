@@ -1,5 +1,5 @@
 # Treat the following commands as real commands, even if files with same names exist
-.PHONY: setup test lint typecheck format check clean help
+.PHONY: setup test lint typecheck format clean help
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -22,3 +22,7 @@ clean:  ## Remove caches and build artifacts
 
 test:  ## Run the test suite
 	uv run pytest -v
+
+adr:  ## Create a new ADR from the template (usage: make adr N=0012 TITLE=my-decision)
+	cp docs/adr/0000-template.md docs/adr/${N}-${TITLE}.md
+	@echo "Created docs/adr/${N}-${TITLE}.md"

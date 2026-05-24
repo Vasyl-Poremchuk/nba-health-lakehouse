@@ -1,0 +1,74 @@
+[project]
+name = "nba-health-lakehouse"
+version = "0.1.0"
+description = "End-to-end NBA player health & workload lakehouse. Bronze/silver/gold on AWS S3, dbt, Airflow, Databricks."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.uv]
+# Tells uv not to look for a build backend or source layout
+package = false
+
+[dependency-groups]
+dev = [
+    "commitizen>=4.16.2",
+    "mypy>=2.1.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.13",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+
+[tool.ruff]
+line-length = 79
+target-version = "py314"
+extend-exclude = ["dbt/target", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors (line length, indent)
+    "F",  # pyflakes (unused imports, undefined names)
+    "W",  # pycodestyle warnings
+    "I",  # isort (import ordering)
+    "N",  # pep8-naming
+    "UP",  # pyupgrade (modernize syntax for target-version)
+    "B",  # flake8-bugbear (real but patterns)
+    "C4",  # comprehensions (suggests cleaner comprehensions)
+    "SIM",  # simplify (refactor opportunities)
+    "RUF",  # ruff-specific rules
+]
+ignore = [
+    "E501",  # line too long - formatter handles this
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 72
+quote-style = "double"
+indent-style = "space"
+nested-string-quote-style = "preferred"
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+pretty = true
+show_error_codes = true
+
+# Third-party libs without type stubs - don't fail on them
+[[tool.mypy.overrides]]
+module = [
+    "nba_api.*",
+    "tenacity.*",
+    "bs4.*",
+    "great_expectations.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"

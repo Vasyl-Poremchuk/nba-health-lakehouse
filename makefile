@@ -1,5 +1,5 @@
 # Treat the following commands as real commands, even if files with same names exist
-.PHONY: setup test lint typecheck format clean help
+.PHONY: help setup lint format clean test adr
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

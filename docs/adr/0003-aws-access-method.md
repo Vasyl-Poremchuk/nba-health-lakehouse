@@ -18,7 +18,7 @@ We will use IAM Identity Center with `aws sso login` for human/CLI access rather
 
 Alternatives considered:
 
-- IAM user with static access key - simpler to set up but relies on long term credentials
+- IAM user with static access key - simpler to set up but relies on long-term credentials
   which AWS recommends against.
 
 

@@ -59,14 +59,23 @@ resource "aws_iam_role_policy" "pipeline_runner_logs" {
       Version = "2012-10-17"
       Statement = [
         {
+          Sid    = "LogGroupActions"
           Effect = "Allow"
           Action = [
             "logs:CreateLogGroup",
-            "logs:CreateLogStream",
-            "logs:PutLogEvents",
+            "logs:DescribeLogGroups",
             "logs:DescribeLogStreams"
           ]
           Resource = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/nbahl/dev/*"
+        },
+        {
+          Sid    = "LogStreamActions"
+          Effect = "Allow"
+          Action = [
+            "logs:CreateLogStream",
+            "logs:PutLogEvents"
+          ]
+          Resource = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/nbahl/dev/*:log-stream:*"
         }
       ]
     }

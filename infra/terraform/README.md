@@ -37,12 +37,11 @@ Three-tier medallion architecture; all buckets are encrypted (AES-256) with publ
 | `nbahl-gold-<env>` | Aggregated | Encryption + public-access block |
 
 > NOTE: All logical parts are separated into different files to follow best practices
->   and to make things maintainable and reusable.
-
+> and to make things maintainable and reusable.
+>
 > NOTE: The `<env>` should be replaced with either `dev` or `prod`.
-
+>
 > NOTE: The remote backend is configured in the `backend.tf` file as an S3 bucket
->   with a lock file for state locking. Also, make sure that defined
->   values in the file are not used as variables or locals - this is a Terraform
->   limitation - the `backend` block is evaluated before any variables or locals
->   are resolved, and Terraform does not know anything yet about them.
+> with a lock file for state locking. Also, make sure that defined values in the file
+> are not used as variables or locals—this is a Terraform limitation. The `backend`
+> block is evaluated before any variables or locals are resolved.

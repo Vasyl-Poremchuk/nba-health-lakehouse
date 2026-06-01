@@ -51,13 +51,13 @@ terraform {
 When adding this backend to a module for the first time, run `terraform init -migrate-state` to copy any existing local state into S3.
 
 > NOTE: All logical parts are separated into different files to follow best practices
->   and to make things maintainable and reusable.
-
+> and to make things maintainable and reusable.
+>
 > NOTE: This module intentionally has no remote backend configured. The S3 bucket
->   must exist before any module can use it as a backend - configuring a remote
->   backend here would create a chicken-and-egg problem. Local state is expected.
-
+> must exist before any module can use it as a backend—configuring a remote backend
+> here would create a chicken-and-egg problem. Local state is expected.
+>
 > NOTE: The backend bucket is created with `prevent_destroy = true` to make sure
->   that it can not be removed by `terraform -chdir=infra/terraform/bootstrap/<env> destroy`.
-
+> that it cannot be removed by `terraform -chdir=infra/terraform/bootstrap/<env> destroy`.
+>
 > NOTE: The `<env>` should be replaced with either `dev` or `prod`.

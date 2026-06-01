@@ -39,3 +39,5 @@ Files are named `NNNN-short-title.md` with a zero-padded sequential number.
 |-----|-------|--------|
 | [0001](0001-medallion-architecture.md) | Choose medallion architecture (bronze/silver/gold) | Accepted |
 | [0002](0002-data-engineering-principles.md) | Data engineering principles for the NBAHL project | Accepted |
+| [0003](0003-aws-access-method.md) | AWS human/CLI access method | Accepted |
+| [0004](0004-terraform-layout.md) | Terraform layout | Accepted |

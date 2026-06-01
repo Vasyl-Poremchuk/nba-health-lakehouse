@@ -1,6 +1,6 @@
 # NBA Health Lakehouse
 
-[![CI](https://github.com/Vasyl-Poremchuk/nbahl/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/you/nbahl/actions/workflows/ci.yml)
+[![CI](https://github.com/Vasyl-Poremchuk/nba-health-lakehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/Vasyl-Poremchuk/nba-health-lakehouse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/)
 

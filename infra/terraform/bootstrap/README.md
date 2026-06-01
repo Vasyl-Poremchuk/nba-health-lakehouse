@@ -18,11 +18,11 @@ To be able to bootstrap all required resources you will need:
 
 The bootstrap setup should be run once (before creating other resources) using the following commands in exact order:
 
-- `terraform -chdir=infra/terraform/bootstrap init` - download provider.
-- `terraform -chdir=infra/terraform/bootstrap fmt` - fix code formatting.
-- `terraform -chdir=infra/terraform/bootstrap validate` - check references.
-- `terraform -chdir=infra/terraform/bootstrap plan` - review before applying.
-- `terraform -chdir=infra/terraform/bootstrap apply` - create the resources.
+- `terraform -chdir=infra/terraform/bootstrap/<env> init` - download provider.
+- `terraform -chdir=infra/terraform/bootstrap/<env> fmt` - fix code formatting.
+- `terraform -chdir=infra/terraform/bootstrap/<env> validate` - check references.
+- `terraform -chdir=infra/terraform/bootstrap/<env> plan` - review before applying.
+- `terraform -chdir=infra/terraform/bootstrap/<env> apply` - create the resources.
 
 ## Resources Created
 
@@ -40,7 +40,7 @@ Other Terraform modules should reference this bucket in their `backend` block. B
 ```hcl
 terraform {
   backend "s3" {
-    bucket       = "nbahl-terraform-state-dev"
+    bucket       = "nbahl-terraform-state-<env>"
     key          = "path/to/terraform.tfstate"
     region       = "us-east-1"
     use_lockfile = true
@@ -58,4 +58,6 @@ When adding this backend to a module for the first time, run `terraform init -mi
 >   backend here would create a chicken-and-egg problem. Local state is expected.
 
 > NOTE: The backend bucket is created with `prevent_destroy = true` to make sure
->   that it can not be removed by `terraform -chdir=infra/terraform/bootstrap destroy`.
+>   that it can not be removed by `terraform -chdir=infra/terraform/bootstrap/<env> destroy`.
+
+> NOTE: The `<env>` should be replaced with either `dev` or `prod`.

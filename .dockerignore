@@ -1,0 +1,91 @@
+# Python
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Testing
+htmlcov/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+*.py.cover
+*.lcov
+.hypothesis/
+.pytest_cache/
+.tox/
+.nox/
+cover/
+tests/
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Type checkers
+.mypy_cache/
+.pyre/
+
+# Linting
+.ruff_cache/
+
+# Logs and PIDs
+*.log
+*.pid
+
+# macOS
+.DS_Store
+
+# Git - never needed in image
+.git/
+.gitignore
+
+# CI/CD - not needed at runtime
+.github/
+.pre-commit-config.yaml
+
+# Editor config - not needed at runtime
+.vscode/
+.idea/
+*.code-workspace
+*.vsix
+
+# Project docs and config - not needed at runtime
+docs/
+*.md
+Makefile
+CONTRIBUTING.md
+
+# Infrastructure - Terraform code never belongs in an image
+infra/
+
+# Terraform artifacts
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ADRs and project docs
+docs/

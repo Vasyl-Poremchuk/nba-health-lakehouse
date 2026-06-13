@@ -51,6 +51,7 @@ celerybeat.pid
 # Logs and PIDs
 *.log
 *.pid
+pipelines/airflow/logs/
 
 # uv
 # uv.lock is intentionally committed - do not add it here

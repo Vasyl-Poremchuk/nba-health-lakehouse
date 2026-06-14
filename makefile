@@ -31,6 +31,7 @@ typecheck:  ## Type-check with mypy
 	uv run mypy src pipelines
 
 format-check:  ## Verify formatting with ruff
+	uv run ruff format --check .
 
 check:  lint format-check typecheck test  ## Run all checks (lint + format + types + tests)
 

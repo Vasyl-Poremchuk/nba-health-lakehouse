@@ -1,5 +1,5 @@
 # Treat the following commands as real commands, even if files with same names exist
-.PHONY: help setup lint format clean test adr
+.PHONY: help setup lint format clean test adr typecheck check up down
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -26,3 +26,17 @@ test:  ## Run the test suite
 adr:  ## Create a new ADR from the template (usage: make adr N=0012 TITLE=my-decision)
 	cp docs/adr/0000-template.md docs/adr/${N}-${TITLE}.md
 	@echo "Created docs/adr/${N}-${TITLE}.md"
+
+typecheck:  ## Type-check with mypy
+	uv run mypy src pipelines
+
+format-check:  ## Verify formatting with ruff
+	uv run ruff format --check .
+
+check:  lint format-check typecheck test  ## Run all checks (lint + format + types + tests)
+
+up:  ## Create and start containers
+	docker compose up airflow-init && docker compose up -d
+
+down:  ## Stop and remove containers, networks, named volumes, and images
+	docker compose down --volumes --rmi all

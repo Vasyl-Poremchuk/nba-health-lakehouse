@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "End-to-end NBA player health & workload lakehouse. Bronze/silver/gold on AWS S3, dbt, Airflow, Databricks."
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
+    "python-dotenv>=1.2.2",
+    "structlog>=26.1.0",
+]
 
 [tool.uv]
 # Tells uv not to look for a build backend or source layout
@@ -12,8 +17,11 @@ package = false
 
 [dependency-groups]
 dev = [
+    "apache-airflow[amazon]>=3.2.2",
+    "boto3>=1.43.26",
     "commitizen>=4.16.2",
     "mypy>=2.1.0",
+    "pendulum>=3.2.0",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "ruff>=0.15.13",
@@ -57,6 +65,7 @@ python_version = "3.14"
 strict = true
 pretty = true
 show_error_codes = true
+plugins = ["pydantic.mypy"]
 
 # Third-party libs without type stubs - don't fail on them
 [[tool.mypy.overrides]]

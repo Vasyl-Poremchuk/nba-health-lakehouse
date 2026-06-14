@@ -8,9 +8,6 @@ __pycache__/
 build/
 dist/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
 # Testing
 htmlcov/
@@ -26,6 +23,7 @@ coverage.xml
 .tox/
 .nox/
 cover/
+tests/
 
 # Environments
 .env
@@ -44,38 +42,37 @@ venv.bak/
 # Linting
 .ruff_cache/
 
-# Celery
-celerybeat-schedule*
-celerybeat.pid
-
 # Logs and PIDs
 *.log
 *.pid
-pipelines/airflow/logs/
-
-# uv
-# uv.lock is intentionally committed - do not add it here
-
-# Jupyter (used occasionally for Databricks exploration)
-.ipynb_checkpoints
 
 # macOS
 .DS_Store
 
-# VS Code (team-shareable settings are explicitly allowed below)
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
-!*.code-workspace
+# Git - never needed in image
+.git/
+.gitignore
+
+# CI/CD - not needed at runtime
+.github/
+.pre-commit-config.yaml
+
+# Editor config - not needed at runtime
+.vscode/
+.idea/
+*.code-workspace
 *.vsix
 
-# JetBrains
-# .idea/
+# Project docs and config - not needed at runtime
+docs/
+*.md
+Makefile
+CONTRIBUTING.md
 
-# Terraform
+# Infrastructure - Terraform code never belongs in an image
+infra/
+
+# Terraform artifacts
 **/.terraform/
 *.tfstate
 *.tfstate.*
@@ -83,10 +80,12 @@ pipelines/airflow/logs/
 *.tfvars.json
 crash.log
 crash.*.log
-.terraform.tfstate.lock.info
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# ADRs and project docs
+docs/

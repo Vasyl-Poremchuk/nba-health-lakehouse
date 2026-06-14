@@ -30,10 +30,12 @@ adr:  ## Create a new ADR from the template (usage: make adr N=0012 TITLE=my-dec
 typecheck:  ## Type-check with mypy
 	uv run mypy src pipelines
 
-check:  lint typecheck test  ## Run all checks (lint + types + tests)
+format-check:  ## Verify formatting with ruff
+
+check:  lint format-check typecheck test  ## Run all checks (lint + format + types + tests)
 
 up:  ## Create and start containers
-	docker compose up airflow-init && docker compose up
+	docker compose up airflow-init && docker compose up -d
 
 down:  ## Stop and remove containers, networks, named volumes, and images
 	docker compose down --volumes --rmi all

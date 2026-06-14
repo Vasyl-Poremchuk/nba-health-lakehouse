@@ -10,7 +10,7 @@ x-airflow-common:
     # yamllint disable rule:line-length
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres/${POSTGRES_DB:?}
     # yamllint enable rule:line-length
-    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:?}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
@@ -26,7 +26,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${PROJ_DIR:-./src}:/opt/airflow/src
-    - ${AWS_DIR}:/home/airflow/.aws:ro
+    - ${AWS_DIR:?}:/home/airflow/.aws:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -52,9 +52,9 @@ services:
   postgres-pipeline-meta:
     image: postgres:16
     environment:
-      POSTGRES_USER: ${POSTGRES_PIPELINE_META_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PIPELINE_META_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_PIPELINE_META_DB}
+      POSTGRES_USER: ${POSTGRES_PIPELINE_META_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PIPELINE_META_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_PIPELINE_META_DB:?}
     volumes:
       - postgres-pipeline-meta-volume:/var/lib/postgresql/data
     healthcheck:

@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pendulum
 import structlog
-from airflow.decorators import dag, task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.sdk import dag, task
 
 from nbahl.config import Settings
 
@@ -11,7 +11,7 @@ log = structlog.get_logger()
 settings = Settings()
 
 
-@dag(  # type: ignore[untyped-decorator]
+@dag(
     schedule=None,
     start_date=pendulum.datetime(2026, 6, 9, tz="UTC"),
     catchup=False,
@@ -20,17 +20,17 @@ settings = Settings()
 def smoke_test() -> None:
     """A smoke test DAG that verifies date logging, environment config, and S3 connectivity."""
 
-    @task()  # type: ignore[untyped-decorator]
+    @task()
     def display_date() -> None:
         """A task that logs the current date."""
         log.info("DATE", date=datetime.now())
 
-    @task()  # type: ignore[untyped-decorator]
+    @task()
     def display_nbahl_env() -> None:
         """A task that logs the value of the 'NBAHL_ENV' environment variable."""
         log.info("NBAHL_ENV", value=settings.nbahl_env)
 
-    @task()  # type: ignore[untyped-decorator]
+    @task()
     def display_s3_files(bucket_name: str, prefix: str = "") -> None:
         """A task that logs a list of all objects in a bucket under a prefix.
 

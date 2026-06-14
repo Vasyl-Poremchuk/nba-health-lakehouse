@@ -77,12 +77,6 @@ module = [
 ]
 ignore_missing_imports = true
 
-# Airflow 3.x ships with incomplete stubs; treat all Airflow imports as Any
-[[tool.mypy.overrides]]
-module = ["airflow.*"]
-follow_imports = "skip"
-ignore_missing_imports = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

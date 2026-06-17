@@ -29,4 +29,4 @@ The above tags were activated as cost-allocation tags on 2026-05-28.
 - All console-created resources above to be migrated to Terraform in NBAHL-13;
   `managed-by` tag flips to `terraform` at that point.
 
-> NOTE: All resource names are filled with the placeholder `XXXX`.
+> **Note:** All resource names are filled with the placeholder `XXXX`.

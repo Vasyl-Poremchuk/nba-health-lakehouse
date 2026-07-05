@@ -53,6 +53,9 @@ celerybeat.pid
 *.pid
 pipelines/airflow/logs/
 
+# Local ingested data staging (bronze goes to S3; this is transient)
+/data/
+
 # uv
 # uv.lock is intentionally committed - do not add it here
 

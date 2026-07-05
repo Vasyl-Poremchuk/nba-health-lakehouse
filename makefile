@@ -21,7 +21,7 @@ clean:  ## Remove caches and build artifacts
 	find . -type d -name __pycache__ -exec rm -rf {} +
 
 test:  ## Run the test suite
-	uv run pytest -v
+	uv run pytest --cov=src/nbahl --cov-report=term-missing -v
 
 adr:  ## Create a new ADR from the template (usage: make adr N=0012 TITLE=my-decision)
 	cp docs/adr/0000-template.md docs/adr/${N}-${TITLE}.md

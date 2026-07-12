@@ -4,16 +4,21 @@ import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
 
-from nbahl.common.constants import BaseConstants, GameLogNBAApiSourceConstants
+from nbahl.common.constants import (
+    BaseConstants,
+    GameLogNBAApiSourceConstants,
+)
 from nbahl.common.enums import (
     LeagueID,
+    Period,
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar,
 )
 from nbahl.sources.game_log_nba_api_source import GameLogNBAApiSource
+from nbahl.sources.play_by_play_nba_api_source import PlayByPlayNBAApiSource
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def data_dir(mocker: MockerFixture, tmp_path: Path) -> Path:
     """Patch ``BaseConstants.DATA_DIR`` to a temporary directory.
 
@@ -27,7 +32,7 @@ def data_dir(mocker: MockerFixture, tmp_path: Path) -> Path:
     return mocker.patch.object(BaseConstants, "DATA_DIR", tmp_path)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def league_game_logs_00_t_regular_season_df() -> pd.DataFrame:
     """Build a sample NBA team-level regular season game log DataFrame.
 
@@ -103,17 +108,7 @@ def league_game_logs_00_t_regular_season_df() -> pd.DataFrame:
     return pd.DataFrame(data=data)
 
 
-@pytest.fixture(scope="function")
-def league_game_log_constants() -> GameLogNBAApiSourceConstants:
-    """Build a ``GameLogNBAApiSourceConstants`` instance.
-
-    Returns:
-        A plain ``GameLogNBAApiSourceConstants`` instance.
-    """
-    return GameLogNBAApiSourceConstants()
-
-
-@pytest.fixture(scope="function")
+@pytest.fixture
 def game_log_nba_api_source() -> GameLogNBAApiSource:
     """Build a ``GameLogNBAApiSource`` configured for NBA team regular season logs.
 
@@ -126,4 +121,69 @@ def game_log_nba_api_source() -> GameLogNBAApiSource:
         league_id=LeagueID.NBA,
         player_or_team_abbreviation=PlayerOrTeamAbbreviation.TEAM,
         season_type_all_star=SeasonTypeAllStar.REGULAR_SEASON,
+    )
+
+
+@pytest.fixture
+def source_df(request: pytest.FixtureRequest) -> pd.DataFrame:
+    """Resolve a named DataFrame fixture by string for indirect parametrization.
+
+    Args:
+        request: Pytest fixture request object; ``request.param`` must be the
+            name of another fixture that returns a ``pd.DataFrame``.
+
+    Returns:
+        The DataFrame produced by the named fixture.
+    """
+    return request.getfixturevalue(request.param)
+
+
+@pytest.fixture
+def play_by_play_logs_0_0_df() -> pd.DataFrame:
+    data = [
+        {
+            "gameId": "0022500002",
+            "actionNumber": 2,
+            "clock": "PT12M00.00S",
+            "period": 1,
+            "teamId": 0,
+            "teamTricode": "",
+            "personId": 0,
+            "playerName": "",
+            "playerNameI": "",
+            "xLegacy": 0,
+            "yLegacy": 0,
+            "shotDistance": 0,
+            "shotResult": "",
+            "isFieldGoal": 0,
+            "scoreHome": "0",
+            "scoreAway": "0",
+            "pointsTotal": 0,
+            "location": "",
+            "description": "Start of 1st Period (10:18 PM EST)",
+            "actionType": "period",
+            "subType": "start",
+            "videoAvailable": 1,
+            "shotValue": 0,
+            "actionId": 1,
+        }
+    ]
+
+    return pd.DataFrame(data=data)
+
+
+@pytest.fixture
+def play_by_play_nba_api_source() -> PlayByPlayNBAApiSource:
+    """Build a ``PlayByPlayNBAApiSource`` configured for all periods.
+
+    Returns:
+        A ``PlayByPlayNBAApiSource`` instance parameterized with
+        ``Period.ALL`` for both ``start_period`` and ``end_period``, and
+        ``GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX`` as the game ID
+        source name prefix.
+    """
+    return PlayByPlayNBAApiSource(
+        start_period=Period.ALL,
+        end_period=Period.ALL,
+        game_id_source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
     )

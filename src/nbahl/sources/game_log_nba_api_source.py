@@ -1,6 +1,5 @@
 import logging
 import random
-from datetime import UTC, datetime
 
 import pandas as pd
 import structlog
@@ -15,12 +14,15 @@ from nbahl.common.enums import (
     LeagueID,
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar,
-    Status,
 )
-from nbahl.common.exceptions import DataFrameEmptyError
-from nbahl.common.models import IngestionRun
-from nbahl.common.utils import get_filepath, get_s3_key, write_to_parquet
+from nbahl.common.models import IngestionContext
+from nbahl.common.utils import (
+    build_source_name,
+    get_filepath,
+    get_s3_key,
+)
 from nbahl.config import Settings
+from nbahl.pipelines import run_ingestion
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -69,14 +71,19 @@ class GameLogNBAApiSource:
         Raises:
             Exception: Re-raised after the final retry attempt fails.
         """
-        game_logs_dfs = LeagueGameLog(
+        game_logs_df = LeagueGameLog(
             league_id=self.league_id,
             player_or_team_abbreviation=self.player_or_team_abbreviation,
             season=season,
             season_type_all_star=self.season_type_all_star,
             headers=random.choice(BaseConstants.HEADERS),
-        ).get_data_frames()
-        game_logs_df = pd.concat(objs=game_logs_dfs)
+        ).get_data_frames()[0]
+
+        log.info(
+            "Fetched league game logs",
+            season=season,
+            total_rows=len(game_logs_df),
+        )
 
         return game_logs_df
 
@@ -89,28 +96,20 @@ def ingest_league_game_logs(
     db_writer: DBWriter,
     s3_writer: S3Writer,
 ) -> None:
-    """Run the full league game log ingestion pipeline for a single season.
-
-    Fetches game logs from the NBA Stats API, writes them to a local Parquet
-    file, uploads the file to S3, and records the run outcome in the pipeline
-    metadata database. Re-raises any exception after persisting the failure
-    record so the caller (or scheduler) sees a non-zero exit.
+    """Build ingestion context for league game logs and run the pipeline.
 
     Args:
         season: NBA season string (e.g. ``"2025-26"``).
         league_id: NBA API league identifier.
-        player_or_team_abbreviation: Whether rows represent players or teams.
-        season_type: Season segment to ingest.
-        db_writer: Writer used to persist the ingestion run record.
+        player_or_team_abbreviation: Whether to fetch player-level or
+            team-level rows.
+        season_type: Season segment to query.
+        db_writer: Writer used to persist the ingestion run metadata.
         s3_writer: Writer used to upload the Parquet file to S3.
-
-    Raises:
-        Exception: Re-raised after writing the failed ingestion run record.
     """
-    source_name = GameLogNBAApiSourceConstants.get_source_name(
-        league_id=league_id,
-        player_or_team_abbreviation=player_or_team_abbreviation,
-        season_type=season_type,
+    source_name = build_source_name(
+        source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
+        suffixes=[league_id, player_or_team_abbreviation, season_type],
     )
     filepath = get_filepath(
         data_dir=BaseConstants.DATA_DIR,
@@ -124,60 +123,15 @@ def ingest_league_game_logs(
         season_type_all_star=season_type,
     )
 
-    log.info(
-        "Starting league game log ingestion",
+    context = IngestionContext(
+        source_name=source_name,
         season=season,
-        league_id=league_id,
-        player_or_team_abbreviation=player_or_team_abbreviation,
-        season_type=season_type,
+        filepath=filepath,
+        s3_key=s3_key,
+        source=source,
     )
 
-    started_at = datetime.now(tz=UTC)
-
-    try:
-        df = source.get_game_logs(season=season)
-
-        if df.empty:
-            raise DataFrameEmptyError("DataFrame is empty")
-
-        write_to_parquet(df=df, filepath=filepath)
-        s3_writer.write(filepath=filepath, key=s3_key)
-        ended_at = datetime.now(tz=UTC)
-
-        success_ingestion_run = IngestionRun(
-            source=source_name,
-            started_at=started_at,
-            ended_at=ended_at,
-            rows_in=len(df),
-            status=Status.SUCCESS,
-            error_message=None,
-        )
-        db_writer.write(ingestion_run=success_ingestion_run)
-
-        log.info(
-            "League game log ingestion succeeded",
-            season=season,
-            rows=len(df),
-        )
-    except Exception as exc:
-        ended_at = datetime.now(tz=UTC)
-
-        failed_ingestion_run = IngestionRun(
-            source=source_name,
-            started_at=started_at,
-            ended_at=ended_at,
-            rows_in=None,
-            status=Status.FAILURE,
-            error_message=str(exc),
-        )
-        db_writer.write(ingestion_run=failed_ingestion_run)
-
-        log.error(
-            "League game log ingestion failed",
-            season=season,
-            error=str(exc),
-        )
-        raise
+    run_ingestion(context=context, db_writer=db_writer, s3_writer=s3_writer)
 
 
 if __name__ == "__main__":

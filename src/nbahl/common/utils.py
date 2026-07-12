@@ -1,6 +1,9 @@
+from enum import StrEnum
 from pathlib import Path
 
 import pandas as pd
+
+from nbahl.common.exceptions import NoSuffixesError
 
 
 def get_filepath(data_dir: Path, *, season: str, source_name: str) -> Path:
@@ -43,3 +46,40 @@ def get_s3_key(filepath: Path, *, idx: int = 2) -> str:
         Forward-slash-joined string of the last ``idx`` path parts.
     """
     return "/".join(filepath.parts[-idx:])
+
+
+def build_source_name(source_name_prefix: str, suffixes: list[StrEnum]) -> str:
+    """Build a kebab-case logical source name from a prefix and enum suffixes.
+
+    Args:
+        source_name_prefix: Leading segment of the name
+            (e.g. ``"league-game-logs"``).
+        suffixes: Ordered list of enum values appended after the prefix; spaces
+            are replaced with hyphens and the result is lowercased.
+
+    Returns:
+        Hyphen-joined source name string
+        (e.g. ``"league-game-logs-00-t-regular-season"``).
+    """
+    if not suffixes:
+        raise NoSuffixesError(
+            f"No suffixes are specified for {source_name_prefix!r}"
+        )
+
+    source_name = (
+        f"{source_name_prefix}-{"-".join(suffixes).lower().replace(" ", "-")}"
+    )
+
+    return source_name
+
+
+def read_from_parquet(filepath: Path) -> pd.DataFrame:
+    """Read a Parquet file into a DataFrame using the PyArrow engine.
+
+    Args:
+        filepath: Path to the Parquet file to read.
+
+    Returns:
+        DataFrame containing the contents of the Parquet file.
+    """
+    return pd.read_parquet(filepath, engine="pyarrow")

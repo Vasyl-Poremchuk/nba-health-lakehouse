@@ -1,10 +1,11 @@
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import pandas as pd
 
 
-class LeagueGameLogSource(Protocol):
-    """Protocol for data sources that provide NBA league game logs."""
+@runtime_checkable
+class GameLogSource(Protocol):
+    """Protocol for data sources that provide NBA game logs."""
 
     def get_game_logs(self, season: str) -> pd.DataFrame:
         """Fetch game logs for the given season.

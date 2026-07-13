@@ -217,7 +217,7 @@ class PlayByPlayNBAApiSource:
             season=season, game_id_source_filepaths=game_id_source_filepaths
         )
 
-        if not game_ids_by_source:
+        if not any(len(game_ids) for game_ids in game_ids_by_source.values()):
             raise GameIDsBySourceEmptyError(
                 "There are no game IDs for the source"
             )

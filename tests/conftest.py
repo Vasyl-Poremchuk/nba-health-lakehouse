@@ -142,7 +142,7 @@ def source_df(request: pytest.FixtureRequest) -> pd.DataFrame:
 def play_by_play_logs_0_0_df() -> pd.DataFrame:
     data = [
         {
-            "gameId": "0022500002",
+            "gameId": "0022500001",
             "actionNumber": 2,
             "clock": "PT12M00.00S",
             "period": 1,

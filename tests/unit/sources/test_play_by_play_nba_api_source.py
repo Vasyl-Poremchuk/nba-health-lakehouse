@@ -374,13 +374,18 @@ def test_get_game_logs_failure_after_all_attempts(
     assert str(exp_info.value) == "Timeout"
 
 
+@pytest.mark.parametrize(
+    "return_value", [{}, {"league-game-logs-00-t-regular-season": []}]
+)
 def test_get_game_logs_failure_for_no_game_ids_by_source(
-    mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
+    mocker: MockerFixture,
+    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
+    return_value: dict[str, list[str]],
 ) -> None:
     mock_collect_game_ids_by_source = mocker.patch.object(
         play_by_play_nba_api_source,
         "collect_game_ids_by_source",
-        return_value={},
+        return_value=return_value,
     )
     mocker.patch("tenacity.nap.time.sleep")
 

@@ -31,3 +31,9 @@ class Status(StrEnum):
 
     SUCCESS = "Success"
     FAILURE = "Failure"
+
+
+class Period(StrEnum):
+    """NBA API period codes used by play-by-play endpoints."""
+
+    ALL = "0"

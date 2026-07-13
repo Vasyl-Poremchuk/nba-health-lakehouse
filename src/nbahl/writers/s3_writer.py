@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import boto3
+import structlog
+
+log = structlog.get_logger()
 
 
 class S3Writer:
@@ -28,3 +31,4 @@ class S3Writer:
             Bucket=self.bucket,
             Key=key,
         )
+        log.info("Uploaded file to S3", bucket=self.bucket, key=key)

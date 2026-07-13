@@ -1,11 +1,5 @@
 from pathlib import Path
 
-from nbahl.common.enums import (
-    LeagueID,
-    PlayerOrTeamAbbreviation,
-    SeasonTypeAllStar,
-)
-
 
 class BaseConstants:
     """Project-wide constants: filesystem paths and NBA API request headers.
@@ -15,6 +9,8 @@ class BaseConstants:
         DATA_DIR: Local directory where ingested Parquet files are written.
         HEADERS: Tuple of browser-mimicking HTTP header dicts rotated on each
             NBA Stats API request to reduce rate-limiting.
+        SLEEP_SECONDS: Seconds to wait between consecutive NBA Stats API
+            requests to avoid rate-limiting.
     """
 
     PROJECT_ROOT = Path(__file__).parents[3]
@@ -179,32 +175,26 @@ class BaseConstants:
             "Sec-Fetch-Dest": "empty",
         },
     )
+    SLEEP_SECONDS = 0.75
 
 
 class GameLogNBAApiSourceConstants:
-    """Constants and naming helpers for the league game log data source.
+    """Constants for the league game log NBA API source.
 
     Attributes:
-        SOURCE_NAME: Base kebab-case name for the source (without parameters).
+        SOURCE_NAME_PREFIX: Leading segment of the logical source name used to
+            construct Parquet filenames and S3 keys.
     """
 
-    SOURCE_NAME = "league-game-logs"
+    SOURCE_NAME_PREFIX = "league-game-logs"
 
-    @staticmethod
-    def get_source_name(
-        league_id: LeagueID,
-        player_or_team_abbreviation: PlayerOrTeamAbbreviation,
-        season_type: SeasonTypeAllStar,
-    ) -> str:
-        """Build a parameterized source name encoding the ingestion parameters.
 
-        Args:
-            league_id: NBA API league identifier.
-            player_or_team_abbreviation: Whether rows represent players or teams.
-            season_type: Season segment type.
+class PlayByPlayNBAApiSourceConstants:
+    """Constants for the play-by-play NBA API source.
 
-        Returns:
-            Kebab-case string, e.g. ``"league-game-logs-00-t-regular-season"``.
-        """
-        suffix = f"{league_id}-{player_or_team_abbreviation}-{season_type}"
-        return f"{GameLogNBAApiSourceConstants.SOURCE_NAME}-{suffix.lower().replace(" ", "-")}"
+    Attributes:
+        SOURCE_NAME_PREFIX: Leading segment of the logical source name used to
+            construct Parquet filenames and S3 keys.
+    """
+
+    SOURCE_NAME_PREFIX = "play-by-play-logs"

@@ -1,7 +1,10 @@
 import psycopg
+import structlog
 
 from nbahl.common.models import IngestionRun
 from nbahl.config import Settings
+
+log = structlog.get_logger()
 
 
 class DBWriter:
@@ -53,6 +56,7 @@ class DBWriter:
                 );
                 """
             )
+        log.info("Ensured ingestion_runs table exists")
 
     def write(self, ingestion_run: IngestionRun) -> None:
         """Insert one ingestion run record into ingestion_runs.
@@ -74,3 +78,8 @@ class DBWriter:
                 );
                 """
             )
+        log.info(
+            "Wrote ingestion run record",
+            source=ingestion_run.source,
+            status=ingestion_run.status,
+        )

@@ -367,11 +367,11 @@ def test_get_game_logs_failure_after_all_attempts(
     mocker.patch("tenacity.nap.time.sleep")
     mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
 
-    with pytest.raises(ConnectionError) as exp_info:
+    with pytest.raises(ConnectionError) as exc_info:
         play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
     assert mock_class.call_count == 3
-    assert str(exp_info.value) == "Timeout"
+    assert str(exc_info.value) == "Timeout"
 
 
 @pytest.mark.parametrize(
@@ -389,11 +389,11 @@ def test_get_game_logs_failure_for_no_game_ids_by_source(
     )
     mocker.patch("tenacity.nap.time.sleep")
 
-    with pytest.raises(GameIDsBySourceEmptyError) as exp_info:
+    with pytest.raises(GameIDsBySourceEmptyError) as exc_info:
         play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
     assert mock_collect_game_ids_by_source.call_count == 1
-    assert str(exp_info.value) == "There are no game IDs for the source"
+    assert str(exc_info.value) == "There are no game IDs for the source"
 
 
 def test_ingest_play_by_play_game_logs_success(

@@ -100,11 +100,11 @@ def test_get_game_logs_failure_after_all_attempts(
         ConnectionError("Timeout"),
     ]
 
-    with pytest.raises(ConnectionError) as exp_info:
+    with pytest.raises(ConnectionError) as exc_info:
         game_log_nba_api_source.get_game_logs(season="2025-26")
 
     assert mock_class.call_count == 3
-    assert str(exp_info.value) == "Timeout"
+    assert str(exc_info.value) == "Timeout"
 
 
 def test_ingest_league_game_logs_success(

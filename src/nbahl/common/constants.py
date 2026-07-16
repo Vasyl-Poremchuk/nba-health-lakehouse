@@ -176,6 +176,7 @@ class BaseConstants:
         },
     )
     SLEEP_SECONDS = 0.75
+    INTERVAL_MINS = 10
 
 
 class GameLogNBAApiSourceConstants:

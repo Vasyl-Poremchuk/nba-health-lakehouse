@@ -29,6 +29,7 @@ class SeasonTypeAllStar(StrEnum):
 class Status(StrEnum):
     """Ingestion run outcome recorded in the pipeline metadata table."""
 
+    PENDING = "Pending"
     SUCCESS = "Success"
     FAILURE = "Failure"
 

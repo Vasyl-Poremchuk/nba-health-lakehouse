@@ -22,7 +22,7 @@ from nbahl.common.utils import (
     get_s3_key,
 )
 from nbahl.config import Settings
-from nbahl.pipelines import run_ingestion
+from nbahl.pipelines import reconcile, run_ingestion
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -132,6 +132,7 @@ def ingest_league_game_logs(
     )
 
     run_ingestion(context=context, db_writer=db_writer, s3_writer=s3_writer)
+    reconcile(db_writer=db_writer, s3_writer=s3_writer)
 
 
 if __name__ == "__main__":

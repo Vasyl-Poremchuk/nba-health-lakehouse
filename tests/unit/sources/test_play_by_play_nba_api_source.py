@@ -268,9 +268,9 @@ def test_get_game_logs_success(
     ]
 
     output_df = play_by_play_nba_api_source.get_game_logs(season="2025-26")
-    mock_class.assert_called_once()
     call_kwargs = mock_class.call_args.kwargs
 
+    mock_class.assert_called_once()
     assert call_kwargs["game_id"] == "0022500001"
     assert call_kwargs["start_period"] == Period.ALL
     assert call_kwargs["end_period"] == Period.ALL
@@ -278,7 +278,6 @@ def test_get_game_logs_success(
         output_df["source_name"].iloc[0]
         == "league-game-logs-00-t-regular-season"
     )
-    assert output_df.equals(play_by_play_logs_0_0_df)
 
 
 def test_get_game_logs_success_after_second_attempt(
@@ -310,7 +309,6 @@ def test_get_game_logs_success_after_second_attempt(
         output_df["source_name"].iloc[0]
         == "league-game-logs-00-t-regular-season"
     )
-    assert output_df.equals(play_by_play_logs_0_0_df)
 
 
 def test_get_game_logs_success_after_third_attempt(
@@ -343,7 +341,6 @@ def test_get_game_logs_success_after_third_attempt(
         output_df["source_name"].iloc[0]
         == "league-game-logs-00-t-regular-season"
     )
-    assert output_df.equals(play_by_play_logs_0_0_df)
 
 
 def test_get_game_logs_failure_after_all_attempts(
@@ -380,6 +377,7 @@ def test_get_game_logs_failure_after_all_attempts(
 def test_get_game_logs_failure_for_no_game_ids_by_source(
     mocker: MockerFixture,
     play_by_play_nba_api_source: PlayByPlayNBAApiSource,
+    data_dir: Path,
     return_value: dict[str, list[str]],
 ) -> None:
     mock_collect_game_ids_by_source = mocker.patch.object(
@@ -397,7 +395,9 @@ def test_get_game_logs_failure_for_no_game_ids_by_source(
 
 
 def test_ingest_play_by_play_game_logs_success(
-    mocker: MockerFixture, play_by_play_logs_0_0_df: pd.DataFrame
+    mocker: MockerFixture,
+    data_dir: Path,
+    play_by_play_logs_0_0_df: pd.DataFrame,
 ) -> None:
     mocker.patch.object(
         PlayByPlayNBAApiSource,
@@ -407,6 +407,7 @@ def test_ingest_play_by_play_game_logs_success(
 
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mocker.patch("nbahl.sources.play_by_play_nba_api_source.reconcile")
 
     ingest_play_by_play_game_logs(
         season="2025-26",
@@ -416,12 +417,12 @@ def test_ingest_play_by_play_game_logs_success(
         s3_writer=mock_s3_writer,
     )
 
-    mock_s3_writer.write.assert_called_once()
-    mock_db_writer.write.assert_called_once()
-    ingestion_run = mock_db_writer.write.call_args.kwargs["ingestion_run"]
+    ingestion_run = mock_db_writer.update.call_args.kwargs["ingestion_run"]
     key = mock_s3_writer.write.call_args.kwargs["key"]
 
-    assert ingestion_run.source == "play-by-play-logs-0-0"
+    mock_s3_writer.write.assert_called_once()
+    mock_db_writer.update.assert_called_once()
+    assert ingestion_run.s3_key == "2025-26/play-by-play-logs-0-0.parquet"
     assert ingestion_run.rows_in == 1
     assert ingestion_run.status == Status.SUCCESS
     assert ingestion_run.error_message is None

@@ -63,3 +63,8 @@ class S3Writer:
                 return False
 
             raise
+        except Exception as exc:
+            log.error(
+                "An unexpected error occurred", error=str(exc), exc_info=True
+            )
+            raise

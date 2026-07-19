@@ -136,8 +136,12 @@ def ingest_league_game_logs(
         source=source,
     )
 
-    run_ingestion(context=context, db_writer=db_writer, s3_writer=s3_writer)
-    reconcile(db_writer=db_writer, s3_writer=s3_writer)
+    try:
+        run_ingestion(
+            context=context, db_writer=db_writer, s3_writer=s3_writer
+        )
+    finally:
+        reconcile(db_writer=db_writer, s3_writer=s3_writer)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ class BaseConstants:
             NBA Stats API request to reduce rate-limiting.
         SLEEP_SECONDS: Seconds to wait between consecutive NBA Stats API
             requests to avoid rate-limiting.
+        INTERVAL_MINS: Minutes between scheduled ingestion runs.
         MAX_TOTAL_GAME_FAILURE_NUMBER: Maximum number of individual game fetch
             failures tolerated across a full season run before aborting.
     """

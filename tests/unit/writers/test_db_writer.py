@@ -5,11 +5,12 @@ from pytest_mock import MockerFixture
 
 from nbahl.common.enums import Status
 from nbahl.common.models import IngestionRun
-from nbahl.config import Settings
 from nbahl.writers.db_writer import DBWriter
 
 
 def test_write_success(mocker: MockerFixture) -> None:
+    mock_settings = mocker.MagicMock()
+
     mock_connect = mocker.MagicMock()
     mocker.patch(
         "nbahl.writers.db_writer.psycopg.connect", return_value=mock_connect
@@ -19,7 +20,7 @@ def test_write_success(mocker: MockerFixture) -> None:
     mock_cur = mock_conn.cursor.return_value.__enter__.return_value
 
     mock_cur.fetchone.return_value = (1,)
-    db_writer = DBWriter(settings=Settings())
+    db_writer = DBWriter(settings=mock_settings)
 
     ingestion_run = IngestionRun(
         s3_key="2025-26/league-game-logs-00-t-regular-season.parquet",
@@ -33,6 +34,8 @@ def test_write_success(mocker: MockerFixture) -> None:
 
 
 def test_write_raise_runtime_error(mocker: MockerFixture) -> None:
+    mock_settings = mocker.MagicMock()
+
     mock_connect = mocker.MagicMock()
     mocker.patch(
         "nbahl.writers.db_writer.psycopg.connect", return_value=mock_connect
@@ -42,7 +45,7 @@ def test_write_raise_runtime_error(mocker: MockerFixture) -> None:
     mock_cur = mock_conn.cursor.return_value.__enter__.return_value
 
     mock_cur.fetchone.return_value = None
-    db_writer = DBWriter(settings=Settings())
+    db_writer = DBWriter(settings=mock_settings)
 
     ingestion_run = IngestionRun(
         s3_key="2025-26/league-game-logs-00-t-regular-season.parquet",

@@ -11,6 +11,9 @@ class BaseConstants:
             NBA Stats API request to reduce rate-limiting.
         SLEEP_SECONDS: Seconds to wait between consecutive NBA Stats API
             requests to avoid rate-limiting.
+        INTERVAL_MINS: Minutes between scheduled ingestion runs.
+        MAX_TOTAL_GAME_FAILURE_NUMBER: Maximum number of individual game fetch
+            failures tolerated across a full season run before aborting.
     """
 
     PROJECT_ROOT = Path(__file__).parents[3]
@@ -176,6 +179,8 @@ class BaseConstants:
         },
     )
     SLEEP_SECONDS = 0.75
+    INTERVAL_MINS = 10
+    MAX_TOTAL_GAME_FAILURE_NUMBER = 10
 
 
 class GameLogNBAApiSourceConstants:

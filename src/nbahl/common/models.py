@@ -11,18 +11,17 @@ class IngestionRun(BaseModel):
     """Metadata record for a single pipeline ingestion run.
 
     Attributes:
-        source: Logical name of the data source
-            (e.g. ``"league-game-logs-00-t-regular-season"``).
+        s3_key: S3 object key of the uploaded Parquet file.
         started_at: UTC timestamp when the ingestion began.
-        ended_at: UTC timestamp when the ingestion finished.
-        rows_in: Number of rows successfully ingested; ``None`` on failure.
-        status: Outcome of the run.
-        error_message: Exception message captured on failure; ``None`` on success.
+        ended_at: UTC timestamp when the ingestion finished; ``None`` while PENDING.
+        rows_in: Number of rows fetched; ``None`` while PENDING or on failure.
+        status: Current outcome of the run.
+        error_message: Exception message on failure; ``None`` otherwise.
     """
 
-    source: str
+    s3_key: str
     started_at: datetime
-    ended_at: datetime
+    ended_at: datetime | None = None
     rows_in: int | None = None
     status: Status
     error_message: str | None = None

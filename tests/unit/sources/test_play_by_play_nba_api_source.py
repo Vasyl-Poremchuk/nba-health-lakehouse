@@ -6,9 +6,11 @@ import pytest
 from pytest_mock import MockerFixture
 from requests.exceptions import ConnectionError
 
+from nbahl.common.constants import BaseConstants
 from nbahl.common.enums import Period, Status
 from nbahl.common.exceptions import (
     ColumnNotFoundError,
+    DataFrameEmptyError,
     GameIDsBySourceEmptyError,
 )
 from nbahl.sources.play_by_play_nba_api_source import (
@@ -247,6 +249,111 @@ def test_add_game_id_source_name(
     assert df["source_name"].iloc[0] == "league-game-logs-00-t-regular-season"
 
 
+def test_get_play_by_play_logs_success(
+    mocker: MockerFixture,
+    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
+    play_by_play_logs_0_0_df: pd.DataFrame,
+) -> None:
+    mock_class = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
+    )
+    mock_class.return_value.get_data_frames.return_value = [
+        play_by_play_logs_0_0_df
+    ]
+
+    output_df = play_by_play_nba_api_source.get_play_by_play_logs(
+        game_id="0022500001",
+        game_id_source_name="league-game-logs-00-t-regular-season",
+    )
+
+    mock_class.assert_called_once()
+    call_kwargs = mock_class.call_args.kwargs
+    assert call_kwargs["game_id"] == "0022500001"
+    assert call_kwargs["start_period"] == Period.ALL
+    assert call_kwargs["end_period"] == Period.ALL
+    assert (
+        output_df["source_name"].iloc[0]
+        == "league-game-logs-00-t-regular-season"
+    )
+
+
+def test_get_play_by_play_logs_success_after_second_attempt(
+    mocker: MockerFixture,
+    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
+    play_by_play_logs_0_0_df: pd.DataFrame,
+) -> None:
+    mock_class = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
+    )
+    mocker.patch("tenacity.nap.time.sleep")
+    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+    mock_class.return_value.get_data_frames.side_effect = [
+        ConnectionError("Timeout"),
+        [play_by_play_logs_0_0_df],
+    ]
+
+    output_df = play_by_play_nba_api_source.get_play_by_play_logs(
+        game_id="0022500001",
+        game_id_source_name="league-game-logs-00-t-regular-season",
+    )
+
+    assert mock_class.call_count == 2
+    assert (
+        output_df["source_name"].iloc[0]
+        == "league-game-logs-00-t-regular-season"
+    )
+
+
+def test_get_play_by_play_logs_success_after_third_attempt(
+    mocker: MockerFixture,
+    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
+    play_by_play_logs_0_0_df: pd.DataFrame,
+) -> None:
+    mock_class = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
+    )
+    mocker.patch("tenacity.nap.time.sleep")
+    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+    mock_class.return_value.get_data_frames.side_effect = [
+        ConnectionError("Timeout"),
+        ConnectionError("Timeout"),
+        [play_by_play_logs_0_0_df],
+    ]
+
+    output_df = play_by_play_nba_api_source.get_play_by_play_logs(
+        game_id="0022500001",
+        game_id_source_name="league-game-logs-00-t-regular-season",
+    )
+
+    assert mock_class.call_count == 3
+    assert (
+        output_df["source_name"].iloc[0]
+        == "league-game-logs-00-t-regular-season"
+    )
+
+
+def test_get_play_by_play_logs_failure_after_all_attempts(
+    mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
+) -> None:
+    mock_class = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
+    )
+    mock_class.return_value.get_data_frames.side_effect = ConnectionError(
+        "Timeout"
+    )
+    mocker.patch("tenacity.nap.time.sleep")
+    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+
+    with pytest.raises(ConnectionError) as exc_info:
+        play_by_play_nba_api_source.get_play_by_play_logs(
+            game_id="0022500001",
+            game_id_source_name="league-game-logs-00-t-regular-season",
+        )
+
+    assert mock_class.call_count == 3
+    assert str(exc_info.value) == "Timeout"
+
+
 def test_get_game_logs_success(
     mocker: MockerFixture,
     play_by_play_nba_api_source: PlayByPlayNBAApiSource,
@@ -259,94 +366,25 @@ def test_get_game_logs_success(
             "league-game-logs-00-t-regular-season": np.array(["0022500001"])
         },
     )
-    mock_class = mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
-    )
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
-    mock_class.return_value.get_data_frames.return_value = [
-        play_by_play_logs_0_0_df
-    ]
-
-    output_df = play_by_play_nba_api_source.get_game_logs(season="2025-26")
-    mock_class.assert_called_once()
-    call_kwargs = mock_class.call_args.kwargs
-
-    assert call_kwargs["game_id"] == "0022500001"
-    assert call_kwargs["start_period"] == Period.ALL
-    assert call_kwargs["end_period"] == Period.ALL
-    assert (
-        output_df["source_name"].iloc[0]
-        == "league-game-logs-00-t-regular-season"
-    )
-    assert output_df.equals(play_by_play_logs_0_0_df)
-
-
-def test_get_game_logs_success_after_second_attempt(
-    mocker: MockerFixture,
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    play_by_play_logs_0_0_df: pd.DataFrame,
-) -> None:
     mocker.patch.object(
         play_by_play_nba_api_source,
-        "collect_game_ids_by_source",
-        return_value={
-            "league-game-logs-00-t-regular-season": np.array(["0022500001"])
-        },
+        "get_play_by_play_logs",
+        return_value=play_by_play_nba_api_source._add_game_id_source_name(
+            df=play_by_play_logs_0_0_df,
+            game_id_source_name="league-game-logs-00-t-regular-season",
+        ),
     )
-    mock_class = mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
-    )
-    mocker.patch("tenacity.nap.time.sleep")
     mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
-    mock_class.return_value.get_data_frames.side_effect = [
-        ConnectionError("Timeout"),
-        [play_by_play_logs_0_0_df],
-    ]
 
     output_df = play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
-    assert mock_class.call_count == 2
     assert (
         output_df["source_name"].iloc[0]
         == "league-game-logs-00-t-regular-season"
     )
-    assert output_df.equals(play_by_play_logs_0_0_df)
 
 
-def test_get_game_logs_success_after_third_attempt(
-    mocker: MockerFixture,
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    play_by_play_logs_0_0_df: pd.DataFrame,
-) -> None:
-    mocker.patch.object(
-        play_by_play_nba_api_source,
-        "collect_game_ids_by_source",
-        return_value={
-            "league-game-logs-00-t-regular-season": np.array(["0022500001"])
-        },
-    )
-    mock_class = mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
-    )
-    mocker.patch("tenacity.nap.time.sleep")
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
-    mock_class.return_value.get_data_frames.side_effect = [
-        ConnectionError("Timeout"),
-        ConnectionError("Timeout"),
-        [play_by_play_logs_0_0_df],
-    ]
-
-    output_df = play_by_play_nba_api_source.get_game_logs(season="2025-26")
-
-    assert mock_class.call_count == 3
-    assert (
-        output_df["source_name"].iloc[0]
-        == "league-game-logs-00-t-regular-season"
-    )
-    assert output_df.equals(play_by_play_logs_0_0_df)
-
-
-def test_get_game_logs_failure_after_all_attempts(
+def test_get_game_logs_no_dataframes(
     mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
 ) -> None:
     mocker.patch.object(
@@ -356,22 +394,50 @@ def test_get_game_logs_failure_after_all_attempts(
             "league-game-logs-00-t-regular-season": np.array(["0022500001"])
         },
     )
-    mock_class = mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
+    mocker.patch.object(
+        play_by_play_nba_api_source,
+        "get_play_by_play_logs",
+        side_effect=ConnectionError("Timeout"),
     )
-    mock_class.return_value.get_data_frames.side_effect = [
-        ConnectionError("Timeout"),
-        ConnectionError("Timeout"),
-        ConnectionError("Timeout"),
-    ]
-    mocker.patch("tenacity.nap.time.sleep")
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
 
-    with pytest.raises(ConnectionError) as exp_info:
+    with pytest.raises(
+        DataFrameEmptyError, match="No DataFrames for any game_id"
+    ):
         play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
-    assert mock_class.call_count == 3
-    assert str(exp_info.value) == "Timeout"
+
+def test_game_logs_exceeded_max_total_game_failure_number(
+    mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
+) -> None:
+    mocker.patch.object(BaseConstants, "MAX_TOTAL_GAME_FAILURE_NUMBER", new=3)
+    mocker.patch.object(
+        play_by_play_nba_api_source,
+        "collect_game_ids_by_source",
+        return_value={
+            "league-game-logs-00-t-regular-season": np.array(
+                [
+                    "0022500001",
+                    "0022500002",
+                    "0022500003",
+                    "0022500004",
+                    "0022500005",
+                ]
+            )
+        },
+    )
+    mocker.patch.object(
+        play_by_play_nba_api_source,
+        "get_play_by_play_logs",
+        side_effect=[
+            ConnectionError("Timeout"),
+            ConnectionError("Timeout"),
+            ConnectionError("Timeout"),
+            ConnectionError("Timeout"),
+        ],
+    )
+
+    with pytest.raises(ConnectionError, match="Timeout"):
+        play_by_play_nba_api_source.get_game_logs("2025-26")
 
 
 @pytest.mark.parametrize(
@@ -387,17 +453,18 @@ def test_get_game_logs_failure_for_no_game_ids_by_source(
         "collect_game_ids_by_source",
         return_value=return_value,
     )
-    mocker.patch("tenacity.nap.time.sleep")
 
-    with pytest.raises(GameIDsBySourceEmptyError) as exp_info:
+    with pytest.raises(GameIDsBySourceEmptyError) as exc_info:
         play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
     assert mock_collect_game_ids_by_source.call_count == 1
-    assert str(exp_info.value) == "There are no game IDs for the source"
+    assert str(exc_info.value) == "There are no game IDs for the source"
 
 
 def test_ingest_play_by_play_game_logs_success(
-    mocker: MockerFixture, play_by_play_logs_0_0_df: pd.DataFrame
+    mocker: MockerFixture,
+    data_dir: Path,
+    play_by_play_logs_0_0_df: pd.DataFrame,
 ) -> None:
     mocker.patch.object(
         PlayByPlayNBAApiSource,
@@ -407,6 +474,7 @@ def test_ingest_play_by_play_game_logs_success(
 
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mocker.patch("nbahl.sources.play_by_play_nba_api_source.reconcile")
 
     ingest_play_by_play_game_logs(
         season="2025-26",
@@ -416,12 +484,12 @@ def test_ingest_play_by_play_game_logs_success(
         s3_writer=mock_s3_writer,
     )
 
-    mock_s3_writer.write.assert_called_once()
-    mock_db_writer.write.assert_called_once()
-    ingestion_run = mock_db_writer.write.call_args.kwargs["ingestion_run"]
+    ingestion_run = mock_db_writer.update.call_args.kwargs["ingestion_run"]
     key = mock_s3_writer.write.call_args.kwargs["key"]
 
-    assert ingestion_run.source == "play-by-play-logs-0-0"
+    mock_s3_writer.write.assert_called_once()
+    mock_db_writer.update.assert_called_once()
+    assert ingestion_run.s3_key == "2025-26/play-by-play-logs-0-0.parquet"
     assert ingestion_run.rows_in == 1
     assert ingestion_run.status == Status.SUCCESS
     assert ingestion_run.error_message is None

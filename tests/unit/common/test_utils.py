@@ -108,13 +108,13 @@ def test_build_source_name(
 def test_build_source_name_no_suffixes() -> None:
     with pytest.raises(
         NoSuffixesError, match="No suffixes are specified"
-    ) as exp_info:
+    ) as exc_info:
         build_source_name(
             source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
             suffixes=[],
         )
 
     assert (
-        str(exp_info.value)
+        str(exc_info.value)
         == "No suffixes are specified for 'league-game-logs'"
     )

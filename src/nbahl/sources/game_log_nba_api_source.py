@@ -4,7 +4,12 @@ import random
 import pandas as pd
 import structlog
 from nba_api.stats.endpoints import LeagueGameLog
-from tenacity import before_log, retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from nbahl.common.constants import (
     BaseConstants,
@@ -22,7 +27,7 @@ from nbahl.common.utils import (
     get_s3_key,
 )
 from nbahl.config import Settings
-from nbahl.pipelines import run_ingestion
+from nbahl.pipelines import reconcile, run_ingestion
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -53,7 +58,7 @@ class GameLogNBAApiSource:
 
     @retry(
         stop=stop_after_attempt(max_attempt_number=3),
-        before=before_log(logger=log, log_level=logging.INFO),
+        before_sleep=before_sleep_log(logger=log, log_level=logging.WARNING),
         wait=wait_exponential(multiplier=1, min=3, max=10),
         reraise=True,
     )
@@ -131,7 +136,12 @@ def ingest_league_game_logs(
         source=source,
     )
 
-    run_ingestion(context=context, db_writer=db_writer, s3_writer=s3_writer)
+    try:
+        run_ingestion(
+            context=context, db_writer=db_writer, s3_writer=s3_writer
+        )
+    finally:
+        reconcile(db_writer=db_writer, s3_writer=s3_writer)
 
 
 if __name__ == "__main__":

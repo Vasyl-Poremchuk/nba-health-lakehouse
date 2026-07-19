@@ -2,6 +2,7 @@ from pathlib import Path
 
 import boto3
 import structlog
+from botocore.exceptions import ClientError
 
 log = structlog.get_logger()
 
@@ -32,3 +33,38 @@ class S3Writer:
             Key=key,
         )
         log.info("Uploaded file to S3", bucket=self.bucket, key=key)
+
+    def object_exists(self, key: str) -> bool:
+        """Check whether an object exists in the bucket at the given key.
+
+        Args:
+            key: S3 object key to check.
+
+        Returns:
+            ``True`` if the object exists, ``False`` if a 404 is returned.
+
+        Raises:
+            ClientError: Re-raised for any non-404 error.
+        """
+        try:
+            self._client.head_object(Bucket=self.bucket, Key=key)
+
+            return True
+        except ClientError as exc:
+            error_code = exc.response["Error"]["Code"]
+
+            if error_code == "404":
+                log.info(
+                    "Object not found",
+                    error_code=error_code,
+                    bucket=self.bucket,
+                    s3_key=key,
+                )
+                return False
+
+            raise
+        except Exception as exc:
+            log.error(
+                "An unexpected error occurred", error=str(exc), exc_info=True
+            )
+            raise

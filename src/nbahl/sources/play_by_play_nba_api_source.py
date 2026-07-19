@@ -7,9 +7,8 @@ import pandas as pd
 import structlog
 from nba_api.stats.endpoints import PlayByPlayV3
 from tenacity import (
-    before_log,
+    before_sleep_log,
     retry,
-    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
@@ -22,6 +21,7 @@ from nbahl.common.constants import (
 from nbahl.common.enums import Period
 from nbahl.common.exceptions import (
     ColumnNotFoundError,
+    DataFrameEmptyError,
     GameIDsBySourceEmptyError,
 )
 from nbahl.common.models import IngestionContext
@@ -32,7 +32,7 @@ from nbahl.common.utils import (
     read_from_parquet,
 )
 from nbahl.config import Settings
-from nbahl.pipelines import run_ingestion
+from nbahl.pipelines import reconcile, run_ingestion
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -187,28 +187,69 @@ class PlayByPlayNBAApiSource:
 
     @retry(
         stop=stop_after_attempt(max_attempt_number=3),
-        before=before_log(logger=log, log_level=logging.INFO),
+        before_sleep=before_sleep_log(logger=log, log_level=logging.WARNING),
         wait=wait_exponential(multiplier=1, min=3, max=10),
-        retry=retry_if_not_exception_type((GameIDsBySourceEmptyError,)),
         reraise=True,
     )
+    def get_play_by_play_logs(
+        self, game_id: str, game_id_source_name: str
+    ) -> pd.DataFrame:
+        """Fetch play-by-play data for a single game from the NBA Stats API.
+
+        Decorated with ``@retry``: retries up to 3 times with exponential
+        backoff (3-10 s) and rotates request headers on each attempt to
+        reduce rate-limiting. The original exception is re-raised after the
+        final attempt.
+
+        Args:
+            game_id: NBA game identifier (e.g. ``"0022401234"``).
+            game_id_source_name: Logical source name written to the
+                ``source_name`` column of the returned DataFrame.
+
+        Returns:
+            DataFrame of play-by-play rows for the game, annotated with a
+            ``source_name`` column.
+
+        Raises:
+            Exception: Re-raised after all retry attempts are exhausted.
+        """
+        df = PlayByPlayV3(
+            game_id=game_id,
+            start_period=self.start_period,
+            end_period=self.end_period,
+            headers=random.choice(BaseConstants.HEADERS),
+        ).get_data_frames()[0]
+
+        df = self._add_game_id_source_name(
+            df=df, game_id_source_name=game_id_source_name
+        )
+
+        return df
+
     def get_game_logs(self, season: str) -> pd.DataFrame:
         """Fetch play-by-play logs for all games in the given season.
 
         Discovers game IDs from previously ingested league game log files,
         then fetches play-by-play data for each game sequentially with a
-        short sleep between requests. Retries up to 3 times with exponential
-        backoff on failure.
+        short sleep between requests. Each game is retried up to 3 times with
+        exponential backoff. Games that exhaust all retries are skipped and
+        logged as warnings; if the total number of skipped games reaches
+        ``MAX_TOTAL_GAME_FAILURE_NUMBER``, the run is aborted immediately.
 
         Args:
             season: NBA season string (e.g. ``"2025-26"``).
 
         Returns:
-            Concatenated DataFrame of play-by-play rows for all games,
-            annotated with a ``source_name`` column.
+            Concatenated DataFrame of play-by-play rows for all successfully
+            fetched games, annotated with a ``source_name`` column. May be
+            partial if some games were skipped due to persistent fetch errors.
 
         Raises:
-            Exception: Re-raised after the final retry attempt fails.
+            GameIDsBySourceEmptyError: If no game IDs are found across all
+                source files.
+            DataFrameEmptyError: If every game failed to fetch.
+            Exception: Re-raised when the total number of game failures reaches
+                ``MAX_TOTAL_GAME_FAILURE_NUMBER``.
         """
         game_id_source_filepaths = self._get_game_id_source_filepaths(
             season=season
@@ -223,6 +264,8 @@ class PlayByPlayNBAApiSource:
             )
 
         game_logs_dfs = []
+        failed_game_ids: list[str] = []
+        total_game_failures = 0
 
         for (
             game_id_source_name,
@@ -234,18 +277,41 @@ class PlayByPlayNBAApiSource:
                     source_name=game_id_source_name,
                     game_id=game_id,
                 )
-                df = PlayByPlayV3(
-                    game_id=game_id,
-                    start_period=self.start_period,
-                    end_period=self.end_period,
-                    headers=random.choice(BaseConstants.HEADERS),
-                ).get_data_frames()[0]
 
-                df = self._add_game_id_source_name(
-                    df=df, game_id_source_name=game_id_source_name
-                )
-                game_logs_dfs.append(df)
-                time.sleep(BaseConstants.SLEEP_SECONDS)
+                try:
+                    df = self.get_play_by_play_logs(
+                        game_id=game_id,
+                        game_id_source_name=game_id_source_name,
+                    )
+
+                    game_logs_dfs.append(df)
+                    time.sleep(BaseConstants.SLEEP_SECONDS)
+                except Exception as exc:
+                    log.warning(
+                        "Fetching play-by-play game logs failed",
+                        game_id=game_id,
+                        game_id_source_name=game_id_source_name,
+                        error=str(exc),
+                    )
+
+                    if (
+                        total_game_failures
+                        >= BaseConstants.MAX_TOTAL_GAME_FAILURE_NUMBER
+                    ):
+                        raise
+
+                    failed_game_ids.append(game_id)
+                    total_game_failures += 1
+
+        if failed_game_ids:
+            log.warning(
+                "Some game IDs failed to fetch and were skipped",
+                total_failed=len(failed_game_ids),
+                failed_game_ids=failed_game_ids,
+            )
+
+        if not game_logs_dfs:
+            raise DataFrameEmptyError("No DataFrames for any game_id")
 
         game_logs_df = pd.concat(objs=game_logs_dfs)
 
@@ -298,7 +364,12 @@ def ingest_play_by_play_game_logs(
         source=source,
     )
 
-    run_ingestion(context=context, db_writer=db_writer, s3_writer=s3_writer)
+    try:
+        run_ingestion(
+            context=context, db_writer=db_writer, s3_writer=s3_writer
+        )
+    finally:
+        reconcile(db_writer=db_writer, s3_writer=s3_writer)
 
 
 if __name__ == "__main__":

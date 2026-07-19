@@ -4,7 +4,12 @@ import random
 import pandas as pd
 import structlog
 from nba_api.stats.endpoints import LeagueGameLog
-from tenacity import before_log, retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from nbahl.common.constants import (
     BaseConstants,
@@ -53,7 +58,7 @@ class GameLogNBAApiSource:
 
     @retry(
         stop=stop_after_attempt(max_attempt_number=3),
-        before=before_log(logger=log, log_level=logging.INFO),
+        before_sleep=before_sleep_log(logger=log, log_level=logging.WARNING),
         wait=wait_exponential(multiplier=1, min=3, max=10),
         reraise=True,
     )

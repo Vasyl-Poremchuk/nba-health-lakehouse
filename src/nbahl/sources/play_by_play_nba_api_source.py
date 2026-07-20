@@ -1,7 +1,6 @@
 import logging
 import random
 import time
-from pathlib import Path
 
 import pandas as pd
 import structlog
@@ -20,16 +19,17 @@ from nbahl.common.constants import (
 )
 from nbahl.common.enums import Period
 from nbahl.common.exceptions import (
-    ColumnNotFoundError,
     DataFrameEmptyError,
     GameIDsBySourceEmptyError,
 )
 from nbahl.common.models import IngestionContext
 from nbahl.common.utils import (
+    add_game_id_source_name,
     build_source_name,
+    collect_game_ids_by_source,
     get_filepath,
+    get_game_id_source_filepaths,
     get_s3_key,
-    read_from_parquet,
 )
 from nbahl.config import Settings
 from nbahl.pipelines import reconcile, run_ingestion
@@ -62,128 +62,6 @@ class PlayByPlayNBAApiSource:
         self.start_period = start_period
         self.end_period = end_period
         self.game_id_source_name_prefix = game_id_source_name_prefix
-
-    def _get_game_id_source_filepaths(
-        self, season: str, extension: str = "parquet"
-    ) -> list[Path]:
-        """Glob for game ID source files matching the configured prefix.
-
-        Args:
-            season: NBA season string (e.g. ``"2025-26"``); determines the
-                subdirectory searched under ``DATA_DIR``.
-            extension: File extension to match (default ``"parquet"``).
-
-        Returns:
-            List of matching file paths; empty when no files are found.
-        """
-        game_id_source_filepaths = list(
-            BaseConstants.DATA_DIR.joinpath(season).glob(
-                f"{self.game_id_source_name_prefix}*.{extension}"
-            )
-        )
-
-        if not game_id_source_filepaths:
-            log.warning(
-                "No game ID source files found",
-                season=season,
-                prefix=self.game_id_source_name_prefix,
-            )
-
-        return game_id_source_filepaths
-
-    @staticmethod
-    def _get_game_ids(
-        season: str, game_id_source_name: str, game_id_column: str = "GAME_ID"
-    ) -> list[str]:
-        """Return unique game IDs from a game log Parquet file.
-
-        Args:
-            season: NBA season string (e.g. ``"2025-26"``).
-            game_id_source_name: Logical source name used to locate the Parquet
-                file (e.g. ``"league-game-logs-00-t-regular-season"``).
-            game_id_column: Column name containing game IDs
-                (default ``"GAME_ID"``).
-
-        Returns:
-            Array of unique game ID values from the specified column.
-
-        Raises:
-            ColumnNotFoundError: If ``game_id_column`` is not present in the
-                Parquet file.
-        """
-        filepath = get_filepath(
-            data_dir=BaseConstants.DATA_DIR,
-            season=season,
-            source_name=game_id_source_name,
-        )
-        df = read_from_parquet(filepath=filepath)
-        columns = list(df.columns)
-
-        if game_id_column not in columns:
-            raise ColumnNotFoundError(
-                f"{game_id_column!r} column not found, columns: {columns}"
-            )
-
-        game_ids = list(df[game_id_column].unique())
-
-        return game_ids
-
-    def collect_game_ids_by_source(
-        self,
-        season: str,
-        game_id_source_filepaths: list[Path],
-        extension: str = "parquet",
-    ) -> dict[str, list[str]]:
-        """Build a mapping from each source name to its unique game IDs.
-
-        Args:
-            season: NBA season string (e.g. ``"2025-26"``).
-            game_id_source_filepaths: Parquet files whose game IDs should be
-                collected, typically from ``_get_game_id_source_filepaths``.
-            extension: File extension stripped from each filename to derive the
-                source name (default ``"parquet"``).
-
-        Returns:
-            Dictionary mapping logical source name to an array of unique game IDs.
-        """
-        game_ids_by_source = {}
-
-        for game_id_source_filepath in game_id_source_filepaths:
-            game_id_source_name = game_id_source_filepath.name.replace(
-                f".{extension}", ""
-            )
-            game_ids = self._get_game_ids(
-                season=season, game_id_source_name=game_id_source_name
-            )
-
-            game_ids_by_source[game_id_source_name] = game_ids
-
-        total_game_ids = sum(len(ids) for ids in game_ids_by_source.values())
-        log.info(
-            "Resolved game IDs by source",
-            total_sources=len(game_ids_by_source),
-            total_game_ids=total_game_ids,
-        )
-
-        return game_ids_by_source
-
-    @staticmethod
-    def _add_game_id_source_name(
-        df: pd.DataFrame, game_id_source_name: str
-    ) -> pd.DataFrame:
-        """Annotate a play-by-play DataFrame with the originating source name.
-
-        Args:
-            df: Play-by-play DataFrame to annotate.
-            game_id_source_name: Logical source name written to the
-                ``source_name`` column.
-
-        Returns:
-            The same DataFrame with a ``source_name`` column added.
-        """
-        df["source_name"] = game_id_source_name
-
-        return df
 
     @retry(
         stop=stop_after_attempt(max_attempt_number=3),
@@ -220,7 +98,7 @@ class PlayByPlayNBAApiSource:
             headers=random.choice(BaseConstants.HEADERS),
         ).get_data_frames()[0]
 
-        df = self._add_game_id_source_name(
+        df = add_game_id_source_name(
             df=df, game_id_source_name=game_id_source_name
         )
 
@@ -251,10 +129,11 @@ class PlayByPlayNBAApiSource:
             Exception: Re-raised when the total number of game failures reaches
                 ``MAX_TOTAL_GAME_FAILURE_NUMBER``.
         """
-        game_id_source_filepaths = self._get_game_id_source_filepaths(
-            season=season
+        game_id_source_filepaths = get_game_id_source_filepaths(
+            season=season,
+            game_id_source_name_prefix=self.game_id_source_name_prefix,
         )
-        game_ids_by_source = self.collect_game_ids_by_source(
+        game_ids_by_source = collect_game_ids_by_source(
             season=season, game_id_source_filepaths=game_id_source_filepaths
         )
 

@@ -9,244 +9,16 @@ from requests.exceptions import ConnectionError
 from nbahl.common.constants import BaseConstants
 from nbahl.common.enums import Period, Status
 from nbahl.common.exceptions import (
-    ColumnNotFoundError,
     DataFrameEmptyError,
     GameIDsBySourceEmptyError,
 )
+from nbahl.common.utils import add_game_id_source_name
 from nbahl.sources.play_by_play_nba_api_source import (
     PlayByPlayNBAApiSource,
     ingest_play_by_play_game_logs,
 )
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
-
-
-@pytest.mark.parametrize(
-    "season, extension, filenames, expected_game_id_source_filenames",
-    [
-        (
-            "2025-26",
-            "parquet",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.parquet",
-                "league-game-logs-00-t-all-star.parquet",
-            ],
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.parquet",
-                "league-game-logs-00-t-all-star.parquet",
-            ],
-        ),
-        (
-            "2025-26",
-            "csv",
-            [
-                "league-game-logs-00-t-regular-season.csv",
-                "league-game-logs-00-t-pre-season.csv",
-                "league-game-logs-00-t-playoffs.csv",
-                "league-game-logs-00-t-all-star.csv",
-            ],
-            [
-                "league-game-logs-00-t-regular-season.csv",
-                "league-game-logs-00-t-pre-season.csv",
-                "league-game-logs-00-t-playoffs.csv",
-                "league-game-logs-00-t-all-star.csv",
-            ],
-        ),
-        (
-            "2025-26",
-            "parquet",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.csv",
-                "league-game-logs-00-t-all-star.csv",
-            ],
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-            ],
-        ),
-        (
-            "2025-26",
-            "csv",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.parquet",
-                "league-game-logs-00-t-all-star.parquet",
-            ],
-            [],
-        ),
-        (
-            "2025-26",
-            "parquet",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.csv",
-                "league-game-logs-00-t-all-star.csv",
-            ],
-            ["league-game-logs-00-t-regular-season.parquet"],
-        ),
-        (
-            "2025-26",
-            "csv",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "00-t-playoffs.csv",
-                "00-t-all-star.csv",
-            ],
-            [],
-        ),
-        ("2025-26", "parquet", [], []),
-    ],
-)
-def test_get_game_id_source_filepaths(
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    data_dir: Path,
-    season: str,
-    extension: str,
-    filenames: list[str],
-    expected_game_id_source_filenames: list[str],
-) -> None:
-    df = pd.DataFrame()
-    season_dir = data_dir / season
-    season_dir.mkdir(parents=True, exist_ok=True)
-
-    for filename in filenames:
-        filepath = season_dir / filename
-
-        if filename.endswith(".parquet"):
-            df.to_parquet(filepath, engine="pyarrow")
-        elif filename.endswith(".csv"):
-            df.to_csv(filepath)
-
-    game_id_source_filepaths = (
-        play_by_play_nba_api_source._get_game_id_source_filepaths(
-            season=season, extension=extension
-        )
-    )
-    game_id_source_filenames = [
-        game_id_source_filepath.name
-        for game_id_source_filepath in game_id_source_filepaths
-    ]
-
-    assert set(game_id_source_filenames) == set(
-        expected_game_id_source_filenames
-    )
-
-
-def test_get_game_ids_success(
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    data_dir: Path,
-    league_game_logs_00_t_regular_season_df: pd.DataFrame,
-) -> None:
-    season_dir = data_dir / "2025-26"
-    season_dir.mkdir(parents=True, exist_ok=True)
-    filepath = season_dir / "league-game-logs-00-t-regular-season.parquet"
-    league_game_logs_00_t_regular_season_df.to_parquet(
-        filepath, engine="pyarrow", index=False
-    )
-
-    game_ids = play_by_play_nba_api_source._get_game_ids(
-        season="2025-26",
-        game_id_source_name="league-game-logs-00-t-regular-season",
-        game_id_column="GAME_ID",
-    )
-
-    assert set(game_ids) == {"0022500001", "0022500002"}
-
-
-def test_get_game_ids_no_game_id_column(
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    data_dir: Path,
-    league_game_logs_00_t_regular_season_df: pd.DataFrame,
-) -> None:
-    season_dir = data_dir / "2025-26"
-    season_dir.mkdir(parents=True, exist_ok=True)
-    filepath = season_dir / "league-game-logs-00-t-regular-season.parquet"
-    league_game_logs_00_t_regular_season_df = (
-        league_game_logs_00_t_regular_season_df.drop(columns=["GAME_ID"])
-    )
-    league_game_logs_00_t_regular_season_df.to_parquet(
-        filepath, engine="pyarrow", index=False
-    )
-
-    with pytest.raises(
-        ColumnNotFoundError, match="'GAME_ID' column not found"
-    ) as exc_info:
-        play_by_play_nba_api_source._get_game_ids(
-            season="2025-26",
-            game_id_source_name="league-game-logs-00-t-regular-season",
-            game_id_column="GAME_ID",
-        )
-
-    assert str(exc_info.value) == (
-        "'GAME_ID' column not found, columns: "
-        "['SEASON_ID', 'TEAM_ID', 'TEAM_ABBREVIATION', 'TEAM_NAME', "
-        "'GAME_DATE', 'MATCHUP', 'WL', 'MIN', 'FGM', 'FGA', 'FG_PCT', "
-        "'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'OREB', "
-        "'DREB', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS', "
-        "'PLUS_MINUS', 'VIDEO_AVAILABLE']"
-    )
-
-
-def test_collect_game_ids_by_source(
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    data_dir: Path,
-    league_game_logs_00_t_regular_season_df: pd.DataFrame,
-) -> None:
-    season_dir = data_dir / "2025-26"
-    season_dir.mkdir(parents=True, exist_ok=True)
-    filepath = season_dir / "league-game-logs-00-t-regular-season.parquet"
-    league_game_logs_00_t_regular_season_df.to_parquet(
-        filepath, engine="pyarrow", index=False
-    )
-
-    game_ids_by_source = (
-        play_by_play_nba_api_source.collect_game_ids_by_source(
-            season="2025-26",
-            game_id_source_filepaths=[filepath],
-            extension="parquet",
-        )
-    )
-
-    assert "league-game-logs-00-t-regular-season" in game_ids_by_source
-    assert set(game_ids_by_source["league-game-logs-00-t-regular-season"]) == {
-        "0022500001",
-        "0022500002",
-    }
-
-
-def test_collect_game_ids_by_source_no_source_filepaths(
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-) -> None:
-    game_ids_by_source = (
-        play_by_play_nba_api_source.collect_game_ids_by_source(
-            season="2025-26", game_id_source_filepaths=[], extension="parquet"
-        )
-    )
-
-    assert game_ids_by_source == {}
-
-
-def test_add_game_id_source_name(
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    play_by_play_logs_0_0_df: pd.DataFrame,
-) -> None:
-    df = play_by_play_nba_api_source._add_game_id_source_name(
-        df=play_by_play_logs_0_0_df,
-        game_id_source_name="league-game-logs-00-t-regular-season",
-    )
-
-    assert "source_name" in df.columns
-    assert len(df["source_name"].unique()) == 1
-    assert df["source_name"].iloc[0] == "league-game-logs-00-t-regular-season"
 
 
 def test_get_play_by_play_logs_success(
@@ -359,9 +131,8 @@ def test_get_game_logs_success(
     play_by_play_nba_api_source: PlayByPlayNBAApiSource,
     play_by_play_logs_0_0_df: pd.DataFrame,
 ) -> None:
-    mocker.patch.object(
-        play_by_play_nba_api_source,
-        "collect_game_ids_by_source",
+    mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
         return_value={
             "league-game-logs-00-t-regular-season": np.array(["0022500001"])
         },
@@ -369,7 +140,7 @@ def test_get_game_logs_success(
     mocker.patch.object(
         play_by_play_nba_api_source,
         "get_play_by_play_logs",
-        return_value=play_by_play_nba_api_source._add_game_id_source_name(
+        return_value=add_game_id_source_name(
             df=play_by_play_logs_0_0_df,
             game_id_source_name="league-game-logs-00-t-regular-season",
         ),
@@ -387,9 +158,8 @@ def test_get_game_logs_success(
 def test_get_game_logs_no_dataframes(
     mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
 ) -> None:
-    mocker.patch.object(
-        play_by_play_nba_api_source,
-        "collect_game_ids_by_source",
+    mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
         return_value={
             "league-game-logs-00-t-regular-season": np.array(["0022500001"])
         },
@@ -410,9 +180,8 @@ def test_game_logs_exceeded_max_total_game_failure_number(
     mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
 ) -> None:
     mocker.patch.object(BaseConstants, "MAX_TOTAL_GAME_FAILURE_NUMBER", new=3)
-    mocker.patch.object(
-        play_by_play_nba_api_source,
-        "collect_game_ids_by_source",
+    mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
         return_value={
             "league-game-logs-00-t-regular-season": np.array(
                 [
@@ -448,9 +217,8 @@ def test_get_game_logs_failure_for_no_game_ids_by_source(
     play_by_play_nba_api_source: PlayByPlayNBAApiSource,
     return_value: dict[str, list[str]],
 ) -> None:
-    mock_collect_game_ids_by_source = mocker.patch.object(
-        play_by_play_nba_api_source,
-        "collect_game_ids_by_source",
+    mock_collect_game_ids_by_source = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
         return_value=return_value,
     )
 

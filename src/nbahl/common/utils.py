@@ -52,7 +52,9 @@ def get_s3_key(filepath: Path, *, idx: int = 2) -> str:
     return "/".join(filepath.parts[-idx:])
 
 
-def build_source_name(source_name_prefix: str, suffixes: list[StrEnum]) -> str:
+def build_source_name(
+    source_name_prefix: str, suffixes: list[StrEnum | str]
+) -> str:
     """Build a kebab-case logical source name from a prefix and enum suffixes.
 
     Args:
@@ -160,6 +162,7 @@ def get_game_ids(
 def collect_game_ids_by_source(
     season: str,
     game_id_source_filepaths: list[Path],
+    game_id_column: str = "GAME_ID",
     extension: str = "parquet",
 ) -> dict[str, list[str]]:
     """Build a mapping from each source name to its unique game IDs.
@@ -181,7 +184,9 @@ def collect_game_ids_by_source(
             f".{extension}", ""
         )
         game_ids = get_game_ids(
-            season=season, game_id_source_name=game_id_source_name
+            season=season,
+            game_id_source_name=game_id_source_name,
+            game_id_column=game_id_column,
         )
 
         game_ids_by_source[game_id_source_name] = game_ids
@@ -199,7 +204,7 @@ def collect_game_ids_by_source(
 def add_game_id_source_name(
     df: pd.DataFrame, game_id_source_name: str
 ) -> pd.DataFrame:
-    """Annotate a play-by-play DataFrame with the originating source name.
+    """Annotate a DataFrame with the originating source name.
 
     Args:
         df: Play-by-play DataFrame to annotate.
@@ -212,3 +217,21 @@ def add_game_id_source_name(
     df["source_name"] = game_id_source_name
 
     return df
+
+
+def zip_datasets(
+    datasets: list[str], dfs: list[pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """Zip dataset names with their positionally matching DataFrames.
+
+    Args:
+        datasets: Ordered list of dataset names from the endpoint configuration.
+        dfs: DataFrames returned by ``get_data_frames()``, in the same
+            positional order as ``datasets``.
+
+    Returns:
+        Mapping of dataset name to the corresponding DataFrame.
+    """
+    dataset_map = {dataset: dfs[idx] for idx, dataset in enumerate(datasets)}
+
+    return dataset_map

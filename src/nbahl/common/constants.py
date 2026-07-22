@@ -1,4 +1,9 @@
 from pathlib import Path
+from typing import ClassVar
+
+from nba_api.stats.endpoints.boxscoreadvancedv3 import BoxScoreAdvancedV3
+from nba_api.stats.endpoints.boxscoresummaryv3 import BoxScoreSummaryV3
+from nba_api.stats.endpoints.boxscoretraditionalv3 import BoxScoreTraditionalV3
 
 
 class BaseConstants:
@@ -203,3 +208,47 @@ class PlayByPlayNBAApiSourceConstants:
     """
 
     SOURCE_NAME_PREFIX = "play-by-play-logs"
+
+
+class BoxScoreNBAApiSourceConstants:
+    """Constants for the box score NBA API source.
+
+    Attributes:
+        SOURCE_NAME_PREFIX: Leading segment of the logical source name used to
+            construct Parquet filenames and S3 keys.
+        BOX_SCORE_SOURCES: Mapping of (endpoint class, source suffix) tuples to
+            ordered dataset name lists. Each entry drives one fetch-write cycle
+            per season run.
+    """
+
+    SOURCE_NAME_PREFIX = "box-score-logs"
+    BOX_SCORE_SOURCES: ClassVar[
+        dict[
+            tuple[
+                BoxScoreTraditionalV3 | BoxScoreAdvancedV3 | BoxScoreSummaryV3,
+                str,
+            ],
+            list[str],
+        ]
+    ] = {
+        (BoxScoreTraditionalV3, "box-score-traditional"): [
+            "player_stats",
+            "team_starter_bench_stats",
+            "team_stats",
+        ],
+        (BoxScoreAdvancedV3, "box-score-advanced"): [
+            "player_stats",
+            "team_stats",
+        ],
+        (BoxScoreSummaryV3, "box-score-summary"): [
+            "game_summary",
+            "game_info",
+            "arena_info",
+            "officials",
+            "line_score",
+            "inactive_players",
+            "last_five_meetings",
+            "other_stats",
+            "available_video",
+        ],
+    }

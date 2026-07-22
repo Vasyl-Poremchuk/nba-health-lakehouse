@@ -132,7 +132,7 @@ def test_get_game_logs_success(
     play_by_play_logs_0_0_df: pd.DataFrame,
 ) -> None:
     mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
+        "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
         return_value={
             "league-game-logs-00-t-regular-season": np.array(["0022500001"])
         },
@@ -159,7 +159,7 @@ def test_get_game_logs_no_dataframes(
     mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
 ) -> None:
     mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
+        "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
         return_value={
             "league-game-logs-00-t-regular-season": np.array(["0022500001"])
         },
@@ -181,7 +181,7 @@ def test_game_logs_exceeded_max_total_game_failure_number(
 ) -> None:
     mocker.patch.object(BaseConstants, "MAX_TOTAL_GAME_FAILURE_NUMBER", new=3)
     mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
+        "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
         return_value={
             "league-game-logs-00-t-regular-season": np.array(
                 [
@@ -209,17 +209,14 @@ def test_game_logs_exceeded_max_total_game_failure_number(
         play_by_play_nba_api_source.get_game_logs("2025-26")
 
 
-@pytest.mark.parametrize(
-    "return_value", [{}, {"league-game-logs-00-t-regular-season": []}]
-)
 def test_get_game_logs_failure_for_no_game_ids_by_source(
-    mocker: MockerFixture,
-    play_by_play_nba_api_source: PlayByPlayNBAApiSource,
-    return_value: dict[str, list[str]],
+    mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
 ) -> None:
     mock_collect_game_ids_by_source = mocker.patch(
-        "nbahl.sources.play_by_play_nba_api_source.collect_game_ids_by_source",
-        return_value=return_value,
+        "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
+        side_effect=GameIDsBySourceEmptyError(
+            "There are no game IDs for the source"
+        ),
     )
 
     with pytest.raises(GameIDsBySourceEmptyError) as exc_info:

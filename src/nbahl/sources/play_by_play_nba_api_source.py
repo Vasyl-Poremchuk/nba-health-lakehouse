@@ -20,16 +20,12 @@ from nbahl.common.constants import (
 from nbahl.common.enums import Period
 from nbahl.common.exceptions import (
     DataFrameEmptyError,
-    GameIDsBySourceEmptyError,
 )
 from nbahl.common.models import IngestionContext
 from nbahl.common.utils import (
     add_game_id_source_name,
-    build_source_name,
-    collect_game_ids_by_source,
-    get_filepath,
-    get_game_id_source_filepaths,
-    get_s3_key,
+    build_context_attributes,
+    get_game_ids_by_source,
 )
 from nbahl.config import Settings
 from nbahl.pipelines import reconcile, run_ingestion
@@ -129,18 +125,10 @@ class PlayByPlayNBAApiSource:
             Exception: Re-raised when the total number of game failures reaches
                 ``MAX_TOTAL_GAME_FAILURE_NUMBER``.
         """
-        game_id_source_filepaths = get_game_id_source_filepaths(
+        game_ids_by_source = get_game_ids_by_source(
             season=season,
             game_id_source_name_prefix=self.game_id_source_name_prefix,
         )
-        game_ids_by_source = collect_game_ids_by_source(
-            season=season, game_id_source_filepaths=game_id_source_filepaths
-        )
-
-        if not any(len(game_ids) for game_ids in game_ids_by_source.values()):
-            raise GameIDsBySourceEmptyError(
-                "There are no game IDs for the source"
-            )
 
         game_logs_dfs = []
         failed_game_ids: list[str] = []
@@ -219,16 +207,11 @@ def ingest_play_by_play_game_logs(
         db_writer: Writer used to persist the ingestion run metadata.
         s3_writer: Writer used to upload the Parquet file to S3.
     """
-    source_name = build_source_name(
+    context_arguments = build_context_attributes(
+        season=season,
         source_name_prefix=PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX,
         suffixes=[start_period, end_period],
     )
-    filepath = get_filepath(
-        data_dir=BaseConstants.DATA_DIR,
-        season=season,
-        source_name=source_name,
-    )
-    s3_key = get_s3_key(filepath=filepath)
     source = PlayByPlayNBAApiSource(
         start_period=start_period,
         end_period=end_period,
@@ -236,11 +219,7 @@ def ingest_play_by_play_game_logs(
     )
 
     context = IngestionContext(
-        source_name=source_name,
-        season=season,
-        filepath=filepath,
-        s3_key=s3_key,
-        source=source,
+        season=season, source=source, **context_arguments
     )
 
     try:

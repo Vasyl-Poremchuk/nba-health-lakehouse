@@ -28,12 +28,17 @@ class BoxScoreSource(Protocol):
     """Protocol for data sources that provide NBA box score game logs."""
 
     def get_box_score_game_logs(
-        self, season: str, box_score_context: BoxScoreContext
+        self,
+        season: str,
+        game_ids_by_source: dict[str, list[str]],
+        box_score_context: BoxScoreContext,
     ) -> dict[str, pd.DataFrame]:
         """Fetch box score game logs for the given season and box score variant.
 
         Args:
             season: NBA season string (e.g. ``"2025-26"``).
+            game_ids_by_source: Mapping of source name to game IDs to fetch,
+                typically from ``get_game_ids_by_source``.
             box_score_context: Configuration specifying the endpoint, datasets,
                 and period settings.
 

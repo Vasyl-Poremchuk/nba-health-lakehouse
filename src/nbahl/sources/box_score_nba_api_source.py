@@ -21,15 +21,14 @@ from nbahl.common.constants import (
 from nbahl.common.enums import Period, Status
 from nbahl.common.exceptions import (
     DataFrameEmptyError,
-    GameIDsBySourceEmptyError,
 )
 from nbahl.common.models import BoxScoreContext, IngestionRun
 from nbahl.common.utils import (
     add_game_id_source_name,
     build_source_name,
-    collect_game_ids_by_source,
+    calculate_item_lengths,
     get_filepath,
-    get_game_id_source_filepaths,
+    get_game_ids_by_source,
     get_s3_key,
     write_to_parquet,
     zip_datasets,
@@ -132,19 +131,23 @@ class BoxScoreNBAApiSource:
         return box_score_logs
 
     def get_box_score_game_logs(
-        self, season: str, box_score_context: BoxScoreContext
+        self,
+        season: str,
+        game_ids_by_source: dict[str, list[str]],
+        box_score_context: BoxScoreContext,
     ) -> dict[str, pd.DataFrame]:
         """Fetch box score logs for all games in the given season.
 
-        Discovers game IDs from previously ingested play-by-play source files,
-        then fetches box score data for each game sequentially with a short
-        sleep between requests. Each game is retried up to 3 times with
-        exponential backoff. Games that exhaust all retries are skipped and
-        logged as warnings; if the total number of skipped games reaches
+        Fetches box score data for each game sequentially with a short sleep
+        between requests. Each game is retried up to 3 times with exponential
+        backoff. Games that exhaust all retries are skipped and logged as
+        warnings; if the total number of skipped games reaches
         ``MAX_TOTAL_GAME_FAILURE_NUMBER``, the run is aborted immediately.
 
         Args:
             season: NBA season string (e.g. ``"2025-26"``).
+            game_ids_by_source: Mapping of source name to game IDs to fetch,
+                typically from ``get_game_ids_by_source``.
             box_score_context: Configuration object specifying the API endpoint,
                 dataset names, and period settings for this box score variant.
 
@@ -155,27 +158,10 @@ class BoxScoreNBAApiSource:
             fetch errors.
 
         Raises:
-            GameIDsBySourceEmptyError: If no game IDs are found across all
-                source files.
             DataFrameEmptyError: If every game failed to fetch.
             Exception: Re-raised when the total number of game failures reaches
                 ``MAX_TOTAL_GAME_FAILURE_NUMBER``.
         """
-        game_id_source_filepaths = get_game_id_source_filepaths(
-            season=season,
-            game_id_source_name_prefix=self.game_id_source_name_prefix,
-        )
-        game_ids_by_source = collect_game_ids_by_source(
-            season=season,
-            game_id_source_filepaths=game_id_source_filepaths,
-            game_id_column="gameId",
-        )
-
-        if not any(len(game_ids) for game_ids in game_ids_by_source.values()):
-            raise GameIDsBySourceEmptyError(
-                "There are no game IDs for the source"
-            )
-
         box_score_logs_by_dataset: dict[str, list[pd.DataFrame]] = {}
         failed_game_ids: list[str] = []
         total_game_failures = 0
@@ -226,7 +212,7 @@ class BoxScoreNBAApiSource:
             )
 
         if not box_score_logs_by_dataset or not any(
-            len(dfs) for dfs in box_score_logs_by_dataset.values()
+            calculate_item_lengths(items=box_score_logs_by_dataset)
         ):
             raise DataFrameEmptyError("No DataFrames for any game_id")
 
@@ -238,7 +224,7 @@ class BoxScoreNBAApiSource:
         log.info(
             "Fetched all box score game logs",
             season=season,
-            total_rows=sum(len(dfs) for dfs in box_score_game_logs.values()),
+            total_rows=sum(calculate_item_lengths(items=box_score_game_logs)),
         )
 
         return box_score_game_logs
@@ -270,6 +256,11 @@ def ingest_box_score_game_logs(
         start_period=start_period,
         end_period=end_period,
         game_id_source_name_prefix=PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX,
+    )
+    game_ids_by_source = get_game_ids_by_source(
+        season=season,
+        game_id_source_name_prefix=source.game_id_source_name_prefix,
+        game_id_column="gameId",
     )
 
     try:
@@ -327,7 +318,9 @@ def ingest_box_score_game_logs(
                 run_ids.append(run_id)
 
             box_score_game_logs = source.get_box_score_game_logs(
-                season=season, box_score_context=box_score_context
+                season=season,
+                game_ids_by_source=game_ids_by_source,
+                box_score_context=box_score_context,
             )
 
             for dataset, source_name, filepath, s3_key, run_id in zip(

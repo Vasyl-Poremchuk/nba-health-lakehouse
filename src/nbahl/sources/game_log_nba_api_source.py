@@ -22,9 +22,7 @@ from nbahl.common.enums import (
 )
 from nbahl.common.models import IngestionContext
 from nbahl.common.utils import (
-    build_source_name,
-    get_filepath,
-    get_s3_key,
+    build_context_attributes,
 )
 from nbahl.config import Settings
 from nbahl.pipelines import reconcile, run_ingestion
@@ -112,16 +110,11 @@ def ingest_league_game_logs(
         db_writer: Writer used to persist the ingestion run metadata.
         s3_writer: Writer used to upload the Parquet file to S3.
     """
-    source_name = build_source_name(
+    context_attributes = build_context_attributes(
+        season=season,
         source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
         suffixes=[league_id, player_or_team_abbreviation, season_type],
     )
-    filepath = get_filepath(
-        data_dir=BaseConstants.DATA_DIR,
-        season=season,
-        source_name=source_name,
-    )
-    s3_key = get_s3_key(filepath=filepath)
     source = GameLogNBAApiSource(
         league_id=league_id,
         player_or_team_abbreviation=player_or_team_abbreviation,
@@ -129,11 +122,7 @@ def ingest_league_game_logs(
     )
 
     context = IngestionContext(
-        source_name=source_name,
-        season=season,
-        filepath=filepath,
-        s3_key=s3_key,
-        source=source,
+        season=season, source=source, **context_attributes
     )
 
     try:

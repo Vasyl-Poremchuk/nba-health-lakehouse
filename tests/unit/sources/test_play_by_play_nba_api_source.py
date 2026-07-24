@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
@@ -133,9 +132,7 @@ def test_get_game_logs_success(
 ) -> None:
     mocker.patch(
         "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
-        return_value={
-            "league-game-logs-00-t-regular-season": np.array(["0022500001"])
-        },
+        return_value={"league-game-logs-00-t-regular-season": ["0022500001"]},
     )
     mocker.patch.object(
         play_by_play_nba_api_source,
@@ -160,9 +157,7 @@ def test_get_game_logs_no_dataframes(
 ) -> None:
     mocker.patch(
         "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
-        return_value={
-            "league-game-logs-00-t-regular-season": np.array(["0022500001"])
-        },
+        return_value={"league-game-logs-00-t-regular-season": ["0022500001"]},
     )
     mocker.patch.object(
         play_by_play_nba_api_source,
@@ -183,15 +178,13 @@ def test_game_logs_exceeded_max_total_game_failure_number(
     mocker.patch(
         "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
         return_value={
-            "league-game-logs-00-t-regular-season": np.array(
-                [
-                    "0022500001",
-                    "0022500002",
-                    "0022500003",
-                    "0022500004",
-                    "0022500005",
-                ]
-            )
+            "league-game-logs-00-t-regular-season": [
+                "0022500001",
+                "0022500002",
+                "0022500003",
+                "0022500004",
+                "0022500005",
+            ]
         },
     )
     mocker.patch.object(

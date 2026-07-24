@@ -7,6 +7,7 @@ from pytest_mock import MockerFixture
 from nbahl.common.constants import (
     BaseConstants,
     GameLogNBAApiSourceConstants,
+    PlayByPlayNBAApiSourceConstants,
 )
 from nbahl.common.enums import (
     LeagueID,
@@ -14,6 +15,7 @@ from nbahl.common.enums import (
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar,
 )
+from nbahl.sources.box_score_nba_api_source import BoxScoreNBAApiSource
 from nbahl.sources.game_log_nba_api_source import GameLogNBAApiSource
 from nbahl.sources.play_by_play_nba_api_source import PlayByPlayNBAApiSource
 
@@ -140,6 +142,12 @@ def source_df(request: pytest.FixtureRequest) -> pd.DataFrame:
 
 @pytest.fixture
 def play_by_play_logs_0_0_df() -> pd.DataFrame:
+    """Build a sample play-by-play log DataFrame for a single game.
+
+    Returns:
+        One-row DataFrame containing a period-start action in the shape
+        returned by the NBA Stats API ``PlayByPlayV3`` endpoint.
+    """
     data = [
         {
             "gameId": "0022500001",
@@ -186,4 +194,21 @@ def play_by_play_nba_api_source() -> PlayByPlayNBAApiSource:
         start_period=Period.ALL,
         end_period=Period.ALL,
         game_id_source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
+    )
+
+
+@pytest.fixture
+def box_score_nba_api_source() -> BoxScoreNBAApiSource:
+    """Build a ``BoxScoreNBAApiSource`` configured for all periods.
+
+    Returns:
+        A ``BoxScoreNBAApiSource`` instance parameterized with
+        ``Period.ALL`` for both ``start_period`` and ``end_period``, and
+        ``PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX`` as the game ID
+        source name prefix.
+    """
+    return BoxScoreNBAApiSource(
+        start_period=Period.ALL,
+        end_period=Period.ALL,
+        game_id_source_name_prefix=PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX,
     )

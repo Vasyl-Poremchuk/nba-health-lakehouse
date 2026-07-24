@@ -15,17 +15,24 @@ from nbahl.common.enums import (
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar,
 )
-from nbahl.common.exceptions import ColumnNotFoundError, NoSuffixesError
+from nbahl.common.exceptions import (
+    ColumnNotFoundError,
+    GameIDsBySourceEmptyError,
+    NoSuffixesError,
+)
 from nbahl.common.utils import (
     add_game_id_source_name,
     build_source_name,
+    calculate_item_lengths,
     collect_game_ids_by_source,
     get_filepath,
     get_game_id_source_filepaths,
     get_game_ids,
+    get_game_ids_by_source,
     get_s3_key,
     read_from_parquet,
     write_to_parquet,
+    zip_datasets,
 )
 
 
@@ -346,3 +353,206 @@ def test_add_game_id_source_name(
     assert "source_name" in df.columns
     assert len(df["source_name"].unique()) == 1
     assert df["source_name"].iloc[0] == "league-game-logs-00-t-regular-season"
+
+
+@pytest.mark.parametrize(
+    "datasets, dfs, expected_output",
+    [
+        (
+            ["player_stats", "team_stats"],
+            [
+                pd.DataFrame(data=[{"player": 1}]),
+                pd.DataFrame(data=[{"team": 1}]),
+            ],
+            {
+                "player_stats": pd.DataFrame(data=[{"player": 1}]),
+                "team_stats": pd.DataFrame(data=[{"team": 1}]),
+            },
+        ),
+        (
+            ["player_stats"],
+            [pd.DataFrame(data=[{"player": 1}])],
+            {"player_stats": pd.DataFrame(data=[{"player": 1}])},
+        ),
+        ([], [], {}),
+    ],
+)
+def test_zip_datasets(
+    datasets: list[str],
+    dfs: list[pd.DataFrame],
+    expected_output: dict[str, pd.DataFrame],
+) -> None:
+    zipped_datasets = zip_datasets(datasets=datasets, dfs=dfs)
+
+    assert len(zipped_datasets) == len(expected_output)
+    assert zipped_datasets.keys() == expected_output.keys()
+
+
+@pytest.mark.parametrize(
+    "items, expected_output",
+    [
+        (
+            {"play-by-play-0-0": ["0022500001", "0022500002", "0022500003"]},
+            [3],
+        ),
+        ({"player_stats": [pd.DataFrame(data=[{"player": 1}])]}, [1]),
+        ({"play-by-play-0-0": []}, [0]),
+        ({}, []),
+    ],
+)
+def test_calculate_item_lengths(
+    items: dict[str, list[str] | list[pd.DataFrame]],
+    expected_output: list[int],
+) -> None:
+    item_lengths = calculate_item_lengths(items=items)
+
+    assert item_lengths == expected_output
+
+
+@pytest.mark.parametrize(
+    "filenames, dfs, season, game_id_source_name_prefix, game_id_column, expected_output",
+    [
+        (
+            [
+                "league-game-logs-00-t-regular-season.parquet",
+                "play-by-play-logs-0-0.parquet",
+            ],
+            [
+                pd.DataFrame(
+                    data=[
+                        {"GAME_ID": "0022500001"},
+                        {"GAME_ID": "0022500002"},
+                        {"GAME_ID": "0022500003"},
+                    ]
+                ),
+                pd.DataFrame(
+                    data=[
+                        {"gameId": "0022500004"},
+                        {"gameId": "0022500005"},
+                        {"gameId": "0022500006"},
+                    ]
+                ),
+            ],
+            "2025-26",
+            "league-game-logs",
+            "GAME_ID",
+            {
+                "league-game-logs-00-t-regular-season": [
+                    "0022500001",
+                    "0022500002",
+                    "0022500003",
+                ]
+            },
+        ),
+        (
+            ["league-game-logs-00-t-regular-season.parquet"],
+            [
+                pd.DataFrame(
+                    data=[
+                        {"GAME_ID": "0022500001"},
+                        {"GAME_ID": "0022500002"},
+                        {"GAME_ID": "0022500003"},
+                    ]
+                )
+            ],
+            "2025-26",
+            "league-game-logs",
+            "GAME_ID",
+            {
+                "league-game-logs-00-t-regular-season": [
+                    "0022500001",
+                    "0022500002",
+                    "0022500003",
+                ]
+            },
+        ),
+        (
+            ["league-game-logs-00-t-regular-season.parquet"],
+            [
+                pd.DataFrame(
+                    data=[
+                        {"GAME_ID": "0022500001"},
+                        {"GAME_ID": "0022500001"},
+                        {"GAME_ID": "0022500001"},
+                    ]
+                )
+            ],
+            "2025-26",
+            "league-game-logs",
+            "GAME_ID",
+            {"league-game-logs-00-t-regular-season": ["0022500001"]},
+        ),
+    ],
+)
+def test_get_game_ids_by_source_success(
+    data_dir: Path,
+    filenames: list[str],
+    dfs: list[pd.DataFrame],
+    season: str,
+    game_id_source_name_prefix: str,
+    game_id_column: str,
+    expected_output: dict[str, list[str]],
+) -> None:
+    season_dir = data_dir / season
+    season_dir.mkdir(parents=True, exist_ok=True)
+    filepaths = [season_dir / filename for filename in filenames]
+
+    for filepath, df in zip(filepaths, dfs, strict=True):
+        write_to_parquet(df=df, filepath=filepath)
+
+    game_ids_by_source = get_game_ids_by_source(
+        season=season,
+        game_id_source_name_prefix=game_id_source_name_prefix,
+        game_id_column=game_id_column,
+    )
+
+    assert game_ids_by_source == expected_output
+
+
+@pytest.mark.parametrize(
+    "filenames, dfs, season, game_id_source_name_prefix, game_id_column",
+    [
+        (
+            ["league-game-logs-00-t-regular-season.parquet"],
+            [pd.DataFrame(data=[{"GAME_ID": "0022500001"}])],
+            "2024-25",
+            "league-game-logs",
+            "GAME_ID",
+        ),
+        (
+            [
+                "play-by-play-logs-0-0.parquet",
+                "play-by-play-logs-1-1.parquet",
+            ],
+            [pd.DataFrame(), pd.DataFrame()],
+            "2025-26",
+            "league-game-logs",
+            "GAME_ID",
+        ),
+        ([], [], "2025-26", "league-game-logs", "GAME_ID"),
+    ],
+)
+def test_get_game_ids_by_source_raise_game_ids_by_source_empty_error(
+    data_dir: Path,
+    filenames: list[str],
+    dfs: list[pd.DataFrame],
+    season: str,
+    game_id_source_name_prefix: str,
+    game_id_column: str,
+) -> None:
+    season_dir = data_dir / "2025-26"
+    season_dir.mkdir(parents=True, exist_ok=True)
+    filepaths = [season_dir / filename for filename in filenames]
+
+    for filepath, df in zip(filepaths, dfs, strict=True):
+        write_to_parquet(df=df, filepath=filepath)
+
+    with pytest.raises(
+        GameIDsBySourceEmptyError,
+        match="There are no game IDs for the source",
+    ):
+        get_game_ids_by_source(
+            season=season,
+            game_id_source_name_prefix=game_id_source_name_prefix,
+            game_id_column=game_id_column,
+        )

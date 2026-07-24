@@ -213,7 +213,7 @@ def add_game_id_source_name(
     """Annotate a DataFrame with the originating source name.
 
     Args:
-        df: Play-by-play DataFrame to annotate.
+        df: DataFrame to annotate.
         game_id_source_name: Logical source name written to the
             ``source_name`` column.
 

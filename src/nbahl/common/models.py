@@ -1,7 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 
-from nba_api.stats.endpoints._base import Endpoint
+from nba_api.stats.endpoints.boxscoreadvancedv3 import BoxScoreAdvancedV3
+from nba_api.stats.endpoints.boxscoresummaryv3 import BoxScoreSummaryV3
+from nba_api.stats.endpoints.boxscoretraditionalv3 import BoxScoreTraditionalV3
 from pydantic import BaseModel, ConfigDict
 
 from nbahl.common.enums import Status
@@ -53,8 +55,9 @@ class BoxScoreContext(BaseModel):
     """Runtime configuration for a single box score API endpoint variant.
 
     Attributes:
-        box_score_class: The nba_api endpoint class to instantiate
-            (e.g. ``BoxScoreTraditionalV3``).
+        box_score_class: The nba_api endpoint class to instantiate -
+            one of ``BoxScoreTraditionalV3``, ``BoxScoreAdvancedV3``, or
+            ``BoxScoreSummaryV3``.
         datasets: Ordered list of dataset names corresponding to the positional
             DataFrames returned by ``get_data_frames()``.
         includes_periods: Whether to forward ``start_period`` and ``end_period``
@@ -64,6 +67,10 @@ class BoxScoreContext(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    box_score_class: type[Endpoint]
+    box_score_class: (
+        type[BoxScoreTraditionalV3]
+        | type[BoxScoreAdvancedV3]
+        | type[BoxScoreSummaryV3]
+    )
     datasets: list[str]
     includes_periods: bool = True

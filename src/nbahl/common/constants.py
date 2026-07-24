@@ -225,22 +225,24 @@ class BoxScoreNBAApiSourceConstants:
     BOX_SCORE_SOURCES: ClassVar[
         dict[
             tuple[
-                BoxScoreTraditionalV3 | BoxScoreAdvancedV3 | BoxScoreSummaryV3,
+                type[BoxScoreTraditionalV3]
+                | type[BoxScoreAdvancedV3]
+                | type[BoxScoreSummaryV3],
                 str,
             ],
             list[str],
         ]
     ] = {
-        (BoxScoreTraditionalV3, "box-score-traditional"): [
+        (BoxScoreTraditionalV3, "traditional"): [
             "player_stats",
             "team_starter_bench_stats",
             "team_stats",
         ],
-        (BoxScoreAdvancedV3, "box-score-advanced"): [
+        (BoxScoreAdvancedV3, "advanced"): [
             "player_stats",
             "team_stats",
         ],
-        (BoxScoreSummaryV3, "box-score-summary"): [
+        (BoxScoreSummaryV3, "summary"): [
             "game_summary",
             "game_info",
             "arena_info",

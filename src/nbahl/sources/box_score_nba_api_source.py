@@ -317,11 +317,37 @@ def ingest_box_score_game_logs(
 
                 run_ids.append(run_id)
 
-            box_score_game_logs = source.get_box_score_game_logs(
-                season=season,
-                game_ids_by_source=game_ids_by_source,
-                box_score_context=box_score_context,
-            )
+            try:
+                box_score_game_logs = source.get_box_score_game_logs(
+                    season=season,
+                    game_ids_by_source=game_ids_by_source,
+                    box_score_context=box_score_context,
+                )
+            except Exception as exc:
+                ended_at = datetime.now(tz=UTC)
+
+                for run_id, s3_key in zip(run_ids, s3_keys, strict=True):
+                    failed_ingestion_run = IngestionRun(
+                        s3_key=s3_key,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                        rows_in=None,
+                        status=Status.FAILURE,
+                        error_message=str(exc),
+                    )
+
+                    log.error(
+                        "Box score game log ingestion failed",
+                        run_id=run_id,
+                        s3_key=s3_key,
+                        season=season,
+                        error=str(exc),
+                        exc_info=True,
+                    )
+                    db_writer.update(
+                        run_id=run_id, ingestion_run=failed_ingestion_run
+                    )
+                raise
 
             for dataset, source_name, filepath, s3_key, run_id in zip(
                 datasets,

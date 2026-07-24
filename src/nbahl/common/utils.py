@@ -2,8 +2,16 @@ from enum import StrEnum
 from pathlib import Path
 
 import pandas as pd
+import structlog
 
-from nbahl.common.exceptions import NoSuffixesError
+from nbahl.common.constants import BaseConstants
+from nbahl.common.exceptions import (
+    ColumnNotFoundError,
+    GameIDsBySourceEmptyError,
+    NoSuffixesError,
+)
+
+log = structlog.get_logger()
 
 
 def get_filepath(data_dir: Path, *, season: str, source_name: str) -> Path:
@@ -48,7 +56,9 @@ def get_s3_key(filepath: Path, *, idx: int = 2) -> str:
     return "/".join(filepath.parts[-idx:])
 
 
-def build_source_name(source_name_prefix: str, suffixes: list[StrEnum]) -> str:
+def build_source_name(
+    source_name_prefix: str, suffixes: list[StrEnum | str]
+) -> str:
     """Build a kebab-case logical source name from a prefix and enum suffixes.
 
     Args:
@@ -83,3 +93,239 @@ def read_from_parquet(filepath: Path) -> pd.DataFrame:
         DataFrame containing the contents of the Parquet file.
     """
     return pd.read_parquet(filepath, engine="pyarrow")
+
+
+def get_game_id_source_filepaths(
+    season: str, game_id_source_name_prefix: str, extension: str = "parquet"
+) -> list[Path]:
+    """Glob for game ID source files matching the configured prefix.
+
+    Args:
+        season: NBA season string (e.g. ``"2025-26"``); determines the
+            subdirectory searched under ``DATA_DIR``.
+        game_id_source_name_prefix: Filename prefix used to filter results
+            (e.g. ``"league-game-logs"``).
+        extension: File extension to match (default ``"parquet"``).
+
+    Returns:
+        List of matching file paths; empty when no files are found.
+    """
+    game_id_source_filepaths = list(
+        BaseConstants.DATA_DIR.joinpath(season).glob(
+            f"{game_id_source_name_prefix}*.{extension}"
+        )
+    )
+
+    if not game_id_source_filepaths:
+        log.warning(
+            "No game ID source files found",
+            season=season,
+            prefix=game_id_source_name_prefix,
+        )
+
+    return game_id_source_filepaths
+
+
+def get_game_ids(
+    season: str, game_id_source_name: str, game_id_column: str = "GAME_ID"
+) -> list[str]:
+    """Return unique game IDs from a game log Parquet file.
+
+    Args:
+        season: NBA season string (e.g. ``"2025-26"``).
+        game_id_source_name: Logical source name used to locate the Parquet
+            file (e.g. ``"league-game-logs-00-t-regular-season"``).
+        game_id_column: Column name containing game IDs
+            (default ``"GAME_ID"``).
+
+    Returns:
+        Array of unique game ID values from the specified column.
+
+    Raises:
+        ColumnNotFoundError: If ``game_id_column`` is not present in the
+            Parquet file.
+    """
+    filepath = get_filepath(
+        data_dir=BaseConstants.DATA_DIR,
+        season=season,
+        source_name=game_id_source_name,
+    )
+    df = read_from_parquet(filepath=filepath)
+    columns = list(df.columns)
+
+    if game_id_column not in columns:
+        raise ColumnNotFoundError(
+            f"{game_id_column!r} column not found, columns: {columns}"
+        )
+
+    game_ids = list(df[game_id_column].unique())
+
+    return game_ids
+
+
+def collect_game_ids_by_source(
+    season: str,
+    game_id_source_filepaths: list[Path],
+    game_id_column: str = "GAME_ID",
+    extension: str = "parquet",
+) -> dict[str, list[str]]:
+    """Build a mapping from each source name to its unique game IDs.
+
+    Args:
+        season: NBA season string (e.g. ``"2025-26"``).
+        game_id_source_filepaths: Parquet files whose game IDs should be
+            collected, typically from ``get_game_id_source_filepaths``.
+        game_id_column: Column name containing game IDs
+            (default ``"GAME_ID"``).
+        extension: File extension stripped from each filename to derive the
+            source name (default ``"parquet"``).
+
+    Returns:
+        Dictionary mapping logical source name to an array of unique game IDs.
+    """
+    game_ids_by_source = {}
+
+    for game_id_source_filepath in game_id_source_filepaths:
+        game_id_source_name = game_id_source_filepath.name.replace(
+            f".{extension}", ""
+        )
+        game_ids = get_game_ids(
+            season=season,
+            game_id_source_name=game_id_source_name,
+            game_id_column=game_id_column,
+        )
+
+        game_ids_by_source[game_id_source_name] = game_ids
+
+    total_game_ids = sum(len(ids) for ids in game_ids_by_source.values())
+    log.info(
+        "Resolved game IDs by source",
+        total_sources=len(game_ids_by_source),
+        total_game_ids=total_game_ids,
+    )
+
+    return game_ids_by_source
+
+
+def add_game_id_source_name(
+    df: pd.DataFrame, game_id_source_name: str
+) -> pd.DataFrame:
+    """Annotate a DataFrame with the originating source name.
+
+    Args:
+        df: DataFrame to annotate.
+        game_id_source_name: Logical source name written to the
+            ``source_name`` column.
+
+    Returns:
+        The same DataFrame with a ``source_name`` column added.
+    """
+    df["source_name"] = game_id_source_name
+
+    return df
+
+
+def zip_datasets(
+    datasets: list[str], dfs: list[pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """Zip dataset names with their positionally matching DataFrames.
+
+    Args:
+        datasets: Ordered list of dataset names from the endpoint configuration.
+        dfs: DataFrames returned by ``get_data_frames()``, in the same
+            positional order as ``datasets``.
+
+    Returns:
+        Mapping of dataset name to the corresponding DataFrame.
+    """
+    dataset_map = {dataset: dfs[idx] for idx, dataset in enumerate(datasets)}
+
+    return dataset_map
+
+
+def calculate_item_lengths(
+    items: dict[str, list[str] | list[pd.DataFrame]],
+) -> list[int]:
+    """Return the length of each value in a dict.
+
+    Args:
+        items: Mapping whose values support ``len()``.
+
+    Returns:
+        List of lengths in dict-iteration order.
+    """
+    item_lengths = [len(item) for item in items.values()]
+
+    return item_lengths
+
+
+def get_game_ids_by_source(
+    season: str,
+    game_id_source_name_prefix: str,
+    game_id_column: str = "GAME_ID",
+) -> dict[str, list[str]]:
+    """Collect game IDs from previously ingested source files.
+
+    Globs for Parquet files matching ``game_id_source_name_prefix`` under the
+    season directory, reads unique game IDs from each file, and returns them
+    grouped by source name.
+
+    Args:
+        season: NBA season string (e.g. ``"2025-26"``).
+        game_id_source_name_prefix: Filename prefix used to glob for the
+            Parquet files that supply game IDs.
+        game_id_column: Column name containing game IDs
+            (default ``"GAME_ID"``).
+
+    Returns:
+        Mapping of source name to a list of unique game IDs.
+
+    Raises:
+        GameIDsBySourceEmptyError: If no game IDs are found across all
+            matching source files.
+    """
+    game_id_source_filepaths = get_game_id_source_filepaths(
+        season=season, game_id_source_name_prefix=game_id_source_name_prefix
+    )
+    game_ids_by_source = collect_game_ids_by_source(
+        season=season,
+        game_id_source_filepaths=game_id_source_filepaths,
+        game_id_column=game_id_column,
+    )
+
+    if not any(calculate_item_lengths(items=game_ids_by_source)):
+        raise GameIDsBySourceEmptyError("There are no game IDs for the source")
+
+    return game_ids_by_source
+
+
+def build_context_attributes(
+    season: str, source_name_prefix: str, suffixes: list[StrEnum | str]
+) -> dict[str, str | Path]:
+    """Build the source name, local filepath, and S3 key for an ingestion context.
+
+    Args:
+        season: NBA season string (e.g. ``"2025-26"``).
+        source_name_prefix: Leading segment of the source name
+            (e.g. ``"play-by-play-logs"``).
+        suffixes: Ordered list of enum values appended after the prefix.
+
+    Returns:
+        Dict with keys ``source_name``, ``filepath``, and ``s3_key``,
+        ready to unpack into ``IngestionContext``.
+    """
+    source_name = build_source_name(
+        source_name_prefix=source_name_prefix, suffixes=suffixes
+    )
+    filepath = get_filepath(
+        data_dir=BaseConstants.DATA_DIR, season=season, source_name=source_name
+    )
+    s3_key = get_s3_key(filepath=filepath)
+
+    context_attributes: dict[str, str | Path] = {
+        "source_name": source_name,
+        "filepath": filepath,
+        "s3_key": s3_key,
+    }
+
+    return context_attributes

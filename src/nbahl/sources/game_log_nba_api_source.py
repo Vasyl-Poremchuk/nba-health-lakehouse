@@ -1,29 +1,19 @@
-import logging
 import random
+from functools import partial
 
 import pandas as pd
 import structlog
 from nba_api.stats.endpoints import LeagueGameLog
-from tenacity import (
-    before_sleep_log,
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-)
 
-from nbahl.common.constants import (
-    BaseConstants,
-    GameLogNBAApiSourceConstants,
-)
+from nbahl.common.constants import BaseConstants, GameLogNBAApiSourceConstants
 from nbahl.common.enums import (
     LeagueID,
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar,
 )
 from nbahl.common.models import IngestionContext
-from nbahl.common.utils import (
-    build_context_attributes,
-)
+from nbahl.common.retry import nba_api_retry
+from nbahl.common.utils import build_context_attributes
 from nbahl.config import Settings
 from nbahl.pipelines import reconcile, run_ingestion
 from nbahl.writers.db_writer import DBWriter
@@ -54,12 +44,7 @@ class GameLogNBAApiSource:
         self.player_or_team_abbreviation = player_or_team_abbreviation
         self.season_type_all_star = season_type_all_star
 
-    @retry(
-        stop=stop_after_attempt(max_attempt_number=3),
-        before_sleep=before_sleep_log(logger=log, log_level=logging.WARNING),
-        wait=wait_exponential(multiplier=1, min=3, max=10),
-        reraise=True,
-    )
+    @nba_api_retry(logger=log)
     def get_game_logs(self, season: str) -> pd.DataFrame:
         """Return game logs for the given season from the NBA Stats API.
 
@@ -122,7 +107,9 @@ def ingest_league_game_logs(
     )
 
     context = IngestionContext(
-        season=season, source=source, **context_attributes
+        season=season,
+        fetch_function=partial(source.get_game_logs, season=season),
+        **context_attributes,
     )
 
     try:

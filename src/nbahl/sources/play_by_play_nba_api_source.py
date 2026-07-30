@@ -1,16 +1,9 @@
-import logging
 import random
-import time
+from functools import partial
 
 import pandas as pd
 import structlog
 from nba_api.stats.endpoints import PlayByPlayV3
-from tenacity import (
-    before_sleep_log,
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from nbahl.common.constants import (
     BaseConstants,
@@ -18,13 +11,12 @@ from nbahl.common.constants import (
     PlayByPlayNBAApiSourceConstants,
 )
 from nbahl.common.enums import Period
-from nbahl.common.exceptions import (
-    DataFrameEmptyError,
-)
 from nbahl.common.models import IngestionContext
+from nbahl.common.retry import nba_api_retry
 from nbahl.common.utils import (
     add_game_id_source_name,
     build_context_attributes,
+    fetch_data_by_column_ids,
     get_game_ids_by_source,
 )
 from nbahl.config import Settings
@@ -59,21 +51,16 @@ class PlayByPlayNBAApiSource:
         self.end_period = end_period
         self.game_id_source_name_prefix = game_id_source_name_prefix
 
-    @retry(
-        stop=stop_after_attempt(max_attempt_number=3),
-        before_sleep=before_sleep_log(logger=log, log_level=logging.WARNING),
-        wait=wait_exponential(multiplier=1, min=3, max=10),
-        reraise=True,
-    )
+    @nba_api_retry(logger=log)
     def get_play_by_play_logs(
         self, game_id: str, game_id_source_name: str
     ) -> pd.DataFrame:
         """Fetch play-by-play data for a single game from the NBA Stats API.
 
-        Decorated with ``@retry``: retries up to 3 times with exponential
-        backoff (3-10 s) and rotates request headers on each attempt to
-        reduce rate-limiting. The original exception is re-raised after the
-        final attempt.
+        Decorated with ``@nba_api_retry``: retries up to 3 times with
+        exponential backoff (3-10 s) and rotates request headers on each
+        attempt to reduce rate-limiting. The original exception is re-raised
+        after the final attempt.
 
         Args:
             game_id: NBA game identifier (e.g. ``"0022401234"``).
@@ -108,7 +95,8 @@ class PlayByPlayNBAApiSource:
         short sleep between requests. Each game is retried up to 3 times with
         exponential backoff. Games that exhaust all retries are skipped and
         logged as warnings; if the total number of skipped games reaches
-        ``MAX_TOTAL_GAME_FAILURE_NUMBER``, the run is aborted immediately.
+        ``BaseConstants.MAX_TOTAL_FAILURE_NUMBER`` (enforced by the underlying
+        ``fetch_data_by_column_ids`` call), the run is aborted immediately.
 
         Args:
             season: NBA season string (e.g. ``"2025-26"``).
@@ -123,70 +111,27 @@ class PlayByPlayNBAApiSource:
                 source files.
             DataFrameEmptyError: If every game failed to fetch.
             Exception: Re-raised when the total number of game failures reaches
-                ``MAX_TOTAL_GAME_FAILURE_NUMBER``.
+                ``BaseConstants.MAX_TOTAL_FAILURE_NUMBER``.
         """
         game_ids_by_source = get_game_ids_by_source(
             season=season,
             game_id_source_name_prefix=self.game_id_source_name_prefix,
         )
+        dfs = []
 
-        game_logs_dfs = []
-        failed_game_ids: list[str] = []
-        total_game_failures = 0
-
-        for (
-            game_id_source_name,
-            game_ids,
-        ) in game_ids_by_source.items():
-            for game_id in game_ids:
-                log.info(
-                    "Fetching play-by-play game logs",
-                    source_name=game_id_source_name,
-                    game_id=game_id,
-                )
-
-                try:
-                    df = self.get_play_by_play_logs(
-                        game_id=game_id,
-                        game_id_source_name=game_id_source_name,
-                    )
-
-                    game_logs_dfs.append(df)
-                    time.sleep(BaseConstants.SLEEP_SECONDS)
-                except Exception as exc:
-                    log.warning(
-                        "Fetching play-by-play game logs failed",
-                        game_id=game_id,
-                        game_id_source_name=game_id_source_name,
-                        error=str(exc),
-                    )
-
-                    if (
-                        total_game_failures
-                        >= BaseConstants.MAX_TOTAL_GAME_FAILURE_NUMBER
-                    ):
-                        raise
-
-                    failed_game_ids.append(game_id)
-                    total_game_failures += 1
-
-        if failed_game_ids:
-            log.warning(
-                "Some game IDs failed to fetch and were skipped",
-                total_failed=len(failed_game_ids),
-                failed_game_ids=failed_game_ids,
+        for game_id_source_name, game_ids in game_ids_by_source.items():
+            df = fetch_data_by_column_ids(
+                column_ids=game_ids,
+                id_label="game_id",
+                fetch_function=partial(
+                    self.get_play_by_play_logs,
+                    game_id_source_name=game_id_source_name,
+                ),
             )
 
-        if not game_logs_dfs:
-            raise DataFrameEmptyError("No DataFrames for any game_id")
+            dfs.append(df)
 
-        game_logs_df = pd.concat(objs=game_logs_dfs)
-
-        log.info(
-            "Fetched all play-by-play game logs",
-            season=season,
-            total_rows=len(game_logs_df),
-        )
+        game_logs_df = pd.concat(dfs)
 
         return game_logs_df
 
@@ -219,7 +164,9 @@ def ingest_play_by_play_game_logs(
     )
 
     context = IngestionContext(
-        season=season, source=source, **context_arguments
+        season=season,
+        fetch_function=partial(source.get_game_logs, season=season),
+        **context_arguments,
     )
 
     try:

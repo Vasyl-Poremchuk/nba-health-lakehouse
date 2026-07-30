@@ -57,7 +57,7 @@ def test_get_play_by_play_logs_success_after_second_attempt(
         "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
     )
     mocker.patch("tenacity.nap.time.sleep")
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
     mock_class.return_value.get_data_frames.side_effect = [
         ConnectionError("Timeout"),
         [play_by_play_logs_0_0_df],
@@ -84,7 +84,7 @@ def test_get_play_by_play_logs_success_after_third_attempt(
         "nbahl.sources.play_by_play_nba_api_source.PlayByPlayV3"
     )
     mocker.patch("tenacity.nap.time.sleep")
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
     mock_class.return_value.get_data_frames.side_effect = [
         ConnectionError("Timeout"),
         ConnectionError("Timeout"),
@@ -113,7 +113,7 @@ def test_get_play_by_play_logs_failure_after_all_attempts(
         "Timeout"
     )
     mocker.patch("tenacity.nap.time.sleep")
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
 
     with pytest.raises(ConnectionError) as exc_info:
         play_by_play_nba_api_source.get_play_by_play_logs(
@@ -142,7 +142,7 @@ def test_get_game_logs_success(
             game_id_source_name="league-game-logs-00-t-regular-season",
         ),
     )
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
 
     output_df = play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
@@ -166,15 +166,15 @@ def test_get_game_logs_no_dataframes(
     )
 
     with pytest.raises(
-        DataFrameEmptyError, match="No DataFrames for any game_id"
+        DataFrameEmptyError, match="No DataFrames for any 'game_id'"
     ):
         play_by_play_nba_api_source.get_game_logs(season="2025-26")
 
 
-def test_game_logs_exceeded_max_total_game_failure_number(
+def test_game_logs_exceeded_max_total_failure_number(
     mocker: MockerFixture, play_by_play_nba_api_source: PlayByPlayNBAApiSource
 ) -> None:
-    mocker.patch.object(BaseConstants, "MAX_TOTAL_GAME_FAILURE_NUMBER", new=3)
+    mocker.patch.object(BaseConstants, "MAX_TOTAL_FAILURE_NUMBER", new=3)
     mocker.patch(
         "nbahl.sources.play_by_play_nba_api_source.get_game_ids_by_source",
         return_value={

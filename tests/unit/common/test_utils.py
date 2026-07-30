@@ -1,8 +1,10 @@
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
 import pandas as pd
 import pytest
+from pytest_mock import MockerFixture
 
 from nbahl.common.constants import (
     BaseConstants,
@@ -25,9 +27,10 @@ from nbahl.common.utils import (
     build_source_name,
     calculate_item_lengths,
     collect_game_ids_by_source,
+    get_column_ids,
+    get_current_date,
     get_filepath,
     get_game_id_source_filepaths,
-    get_game_ids,
     get_game_ids_by_source,
     get_s3_key,
     read_from_parquet,
@@ -36,16 +39,54 @@ from nbahl.common.utils import (
 )
 
 
-def test_get_filepath(data_dir: Path) -> None:
+@pytest.mark.parametrize(
+    "source_name, season, source_dir, expected_suffix",
+    [
+        (
+            "league-game-logs-00-t-regular-season",
+            "2025-26",
+            None,
+            "2025-26/league-game-logs-00-t-regular-season.parquet",
+        ),
+        (
+            "team-00-roster",
+            None,
+            "rosters",
+            "rosters/2026-01-01/team-00-roster.parquet",
+        ),
+    ],
+)
+def test_get_filepath_success(
+    mocker: MockerFixture,
+    data_dir: Path,
+    source_name: str,
+    season: str | None,
+    source_dir: str | None,
+    expected_suffix: str,
+) -> None:
+    mocker.patch(
+        "nbahl.common.utils.get_current_date", return_value="2026-01-01"
+    )
     filepath = get_filepath(
-        data_dir,
-        season="2025-26",
-        source_name="league-game-logs-00-t-regular-season",
+        data_dir=data_dir,
+        source_name=source_name,
+        season=season,
+        source_dir=source_dir,
     )
 
-    assert filepath.as_posix().endswith(
-        "2025-26/league-game-logs-00-t-regular-season.parquet"
-    )
+    assert filepath.as_posix().endswith(expected_suffix)
+
+
+def test_get_filepath_raise_value_error(data_dir: Path) -> None:
+    with pytest.raises(
+        ValueError, match="Either season or source_dir must be provided"
+    ):
+        get_filepath(
+            data_dir=data_dir,
+            source_name="team-00-roster",
+            season=None,
+            source_dir=None,
+        )
 
 
 def test_write_to_read_from_parquet(
@@ -63,7 +104,7 @@ def test_write_to_read_from_parquet(
 
 
 @pytest.mark.parametrize(
-    "filepath, idx, expected_s3_key",
+    "filepath, num_trailing_parts, expected_s3_key",
     [
         (
             BaseConstants.DATA_DIR.joinpath(
@@ -81,8 +122,12 @@ def test_write_to_read_from_parquet(
         ),
     ],
 )
-def test_get_s3_key(filepath: Path, idx: int, expected_s3_key: str) -> None:
-    s3_key = get_s3_key(filepath=filepath, idx=idx)
+def test_get_s3_key(
+    filepath: Path, num_trailing_parts: int, expected_s3_key: str
+) -> None:
+    s3_key = get_s3_key(
+        filepath=filepath, num_trailing_parts=num_trailing_parts
+    )
 
     assert s3_key == expected_s3_key
 
@@ -132,12 +177,11 @@ def test_build_source_name_no_suffixes() -> None:
 
 
 @pytest.mark.parametrize(
-    "season, game_id_source_name_prefix, extension, filenames, expected_game_id_source_filenames",
+    "season, game_id_source_name_prefix, filenames, expected_game_id_source_filenames",
     [
         (
             "2025-26",
             "league-game-logs",
-            "parquet",
             [
                 "league-game-logs-00-t-regular-season.parquet",
                 "league-game-logs-00-t-pre-season.parquet",
@@ -154,51 +198,31 @@ def test_build_source_name_no_suffixes() -> None:
         (
             "2025-26",
             "league-game-logs",
-            "csv",
             [
                 "league-game-logs-00-t-regular-season.csv",
                 "league-game-logs-00-t-pre-season.csv",
                 "league-game-logs-00-t-playoffs.csv",
                 "league-game-logs-00-t-all-star.csv",
-            ],
-            [
-                "league-game-logs-00-t-regular-season.csv",
-                "league-game-logs-00-t-pre-season.csv",
-                "league-game-logs-00-t-playoffs.csv",
-                "league-game-logs-00-t-all-star.csv",
-            ],
-        ),
-        (
-            "2025-26",
-            "league-game-logs",
-            "parquet",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.csv",
-                "league-game-logs-00-t-all-star.csv",
-            ],
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-            ],
-        ),
-        (
-            "2025-26",
-            "league-game-logs",
-            "csv",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "league-game-logs-00-t-playoffs.parquet",
-                "league-game-logs-00-t-all-star.parquet",
             ],
             [],
         ),
         (
             "2025-26",
             "league-game-logs",
-            "parquet",
+            [
+                "league-game-logs-00-t-regular-season.parquet",
+                "league-game-logs-00-t-pre-season.parquet",
+                "league-game-logs-00-t-playoffs.csv",
+                "league-game-logs-00-t-all-star.csv",
+            ],
+            [
+                "league-game-logs-00-t-regular-season.parquet",
+                "league-game-logs-00-t-pre-season.parquet",
+            ],
+        ),
+        (
+            "2025-26",
+            "league-game-logs",
             [
                 "league-game-logs-00-t-regular-season.parquet",
                 "00-t-pre-season.parquet",
@@ -207,26 +231,13 @@ def test_build_source_name_no_suffixes() -> None:
             ],
             ["league-game-logs-00-t-regular-season.parquet"],
         ),
-        (
-            "2025-26",
-            "league-game-logs",
-            "csv",
-            [
-                "league-game-logs-00-t-regular-season.parquet",
-                "league-game-logs-00-t-pre-season.parquet",
-                "00-t-playoffs.csv",
-                "00-t-all-star.csv",
-            ],
-            [],
-        ),
-        ("2025-26", "league-game-logs", "parquet", [], []),
+        ("2025-26", "league-game-logs", [], []),
     ],
 )
 def test_get_game_id_source_filepaths(
     data_dir: Path,
     season: str,
     game_id_source_name_prefix: str,
-    extension: str,
     filenames: list[str],
     expected_game_id_source_filenames: list[str],
 ) -> None:
@@ -245,7 +256,6 @@ def test_get_game_id_source_filepaths(
     game_id_source_filepaths = get_game_id_source_filepaths(
         season=season,
         game_id_source_name_prefix=game_id_source_name_prefix,
-        extension=extension,
     )
     game_id_source_filenames = [
         game_id_source_filepath.name
@@ -257,7 +267,7 @@ def test_get_game_id_source_filepaths(
     )
 
 
-def test_get_game_ids_success(
+def test_get_column_ids_success(
     data_dir: Path,
     league_game_logs_00_t_regular_season_df: pd.DataFrame,
 ) -> None:
@@ -268,16 +278,15 @@ def test_get_game_ids_success(
         filepath, engine="pyarrow", index=False
     )
 
-    game_ids = get_game_ids(
-        season="2025-26",
-        game_id_source_name="league-game-logs-00-t-regular-season",
-        game_id_column="GAME_ID",
+    game_ids = get_column_ids(
+        filepath=filepath,
+        id_column="GAME_ID",
     )
 
     assert set(game_ids) == {"0022500001", "0022500002"}
 
 
-def test_get_game_ids_no_game_id_column(
+def test_get_column_ids_no_game_id_column(
     data_dir: Path,
     league_game_logs_00_t_regular_season_df: pd.DataFrame,
 ) -> None:
@@ -294,10 +303,9 @@ def test_get_game_ids_no_game_id_column(
     with pytest.raises(
         ColumnNotFoundError, match="'GAME_ID' column not found"
     ) as exc_info:
-        get_game_ids(
-            season="2025-26",
-            game_id_source_name="league-game-logs-00-t-regular-season",
-            game_id_column="GAME_ID",
+        get_column_ids(
+            filepath=filepath,
+            id_column="GAME_ID",
         )
 
     assert str(exc_info.value) == (
@@ -322,9 +330,7 @@ def test_collect_game_ids_by_source(
     )
 
     game_ids_by_source = collect_game_ids_by_source(
-        season="2025-26",
-        game_id_source_filepaths=[filepath],
-        extension="parquet",
+        season="2025-26", game_id_source_filepaths=[filepath]
     )
 
     assert "league-game-logs-00-t-regular-season" in game_ids_by_source
@@ -336,7 +342,7 @@ def test_collect_game_ids_by_source(
 
 def test_collect_game_ids_by_source_no_source_filepaths() -> None:
     game_ids_by_source = collect_game_ids_by_source(
-        season="2025-26", game_id_source_filepaths=[], extension="parquet"
+        season="2025-26", game_id_source_filepaths=[]
     )
 
     assert game_ids_by_source == {}
@@ -556,3 +562,12 @@ def test_get_game_ids_by_source_raise_game_ids_by_source_empty_error(
             game_id_source_name_prefix=game_id_source_name_prefix,
             game_id_column=game_id_column,
         )
+
+
+def test_get_current_date(mocker: MockerFixture) -> None:
+    mocker.patch(
+        "nbahl.common.utils.get_current_datetime",
+        return_value=datetime(2026, 1, 1, 0, 0, 0, 0),
+    )
+
+    assert get_current_date() == "2026-01-01"

@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -9,8 +10,8 @@ from requests.exceptions import ConnectionError
 
 from nbahl.common.enums import Status
 from nbahl.common.exceptions import DataFrameEmptyError
-from nbahl.common.models import IngestionContext
-from nbahl.pipelines import reconcile, run_ingestion
+from nbahl.common.models import IngestionContext, IngestionContextPerDataset
+from nbahl.pipelines import reconcile, run_ingestion, run_ingestion_per_dataset
 from nbahl.protocols import GameLogSource
 from nbahl.sources.game_log_nba_api_source import GameLogNBAApiSource
 from nbahl.sources.play_by_play_nba_api_source import PlayByPlayNBAApiSource
@@ -57,7 +58,7 @@ def test_run_ingestion_success(
         season=season,
         filepath=filepath,
         s3_key=f"{season}/{source_name}.parquet",
-        source=mock_source,
+        fetch_function=partial(mock_source.get_game_logs, season=season),
     )
 
     run_ingestion(
@@ -107,7 +108,7 @@ def test_run_ingestion_api_failure(
         season=season,
         filepath=filepath,
         s3_key=f"{season}/{source_name}.parquet",
-        source=mock_source,
+        fetch_function=partial(mock_source.get_game_logs, season=season),
     )
 
     with pytest.raises(ConnectionError, match="Timeout"):
@@ -169,7 +170,7 @@ def test_run_ingestion_s3_failure(
         season=season,
         filepath=filepath,
         s3_key=f"{season}/{source_name}.parquet",
-        source=mock_source,
+        fetch_function=partial(mock_source.get_game_logs, season=season),
     )
 
     with pytest.raises(S3UploadFailedError, match="NoSuchBucket"):
@@ -225,7 +226,7 @@ def test_run_ingestion_df_empty_failure(
         season=season,
         filepath=filepath,
         s3_key=f"{season}/{source_name}.parquet",
-        source=mock_source,
+        fetch_function=partial(mock_source.get_game_logs, season=season),
     )
 
     with pytest.raises(DataFrameEmptyError, match="DataFrame is empty"):
@@ -276,7 +277,7 @@ def test_run_ingestion_no_run_id(
         season=season,
         filepath=filepath,
         s3_key=f"{season}/{source_name}.parquet",
-        source=mock_source,
+        fetch_function=partial(mock_source.get_game_logs, season=season),
     )
 
     with pytest.raises(
@@ -287,6 +288,147 @@ def test_run_ingestion_no_run_id(
         )
 
     mock_db_writer.update.assert_not_called()
+
+
+def test_run_ingestion_per_dataset_success(
+    mocker: MockerFixture, data_dir: Path
+) -> None:
+    source_names = ["team-00-roster", "team-00-coaches"]
+    s3_keys = [
+        "rosters/2025-26/team-00-roster.parquet",
+        "rosters/2025-26/team-00-coaches.parquet",
+    ]
+    filepaths = [
+        data_dir / "team-00-roster.parquet",
+        data_dir / "team-00-coaches.parquet",
+    ]
+    datasets = ["roster", "coaches"]
+    dataset_dfs = {
+        "roster": pd.DataFrame(data=[{"PLAYER_ID": 1}, {"PLAYER_ID": 2}]),
+        "coaches": pd.DataFrame(data=[{"COACH_ID": 1}]),
+    }
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.side_effect = [1, 2]
+
+    context = IngestionContextPerDataset(
+        source_names=source_names,
+        season="2025-26",
+        filepaths=filepaths,
+        s3_keys=s3_keys,
+        datasets=datasets,
+        fetch_function=lambda: dataset_dfs,
+    )
+
+    run_ingestion_per_dataset(
+        context=context, db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )
+
+    ingestion_runs_by_key = {
+        call.kwargs["ingestion_run"].s3_key: call.kwargs["ingestion_run"]
+        for call in mock_db_writer.update.call_args_list
+    }
+
+    assert mock_db_writer.write.call_count == 2
+    assert mock_s3_writer.write.call_count == 2
+    assert mock_db_writer.update.call_count == 2
+    assert set(ingestion_runs_by_key) == set(s3_keys)
+    assert all(
+        run.status == Status.SUCCESS for run in ingestion_runs_by_key.values()
+    )
+    assert ingestion_runs_by_key[s3_keys[0]].rows_in == 2
+    assert ingestion_runs_by_key[s3_keys[1]].rows_in == 1
+
+
+def test_run_ingestion_per_dataset_shared_fetch_failure(
+    mocker: MockerFixture, data_dir: Path
+) -> None:
+    source_names = ["team-00-roster", "team-00-coaches"]
+    s3_keys = [
+        "rosters/2025-26/team-00-roster.parquet",
+        "rosters/2025-26/team-00-coaches.parquet",
+    ]
+    filepaths = [
+        data_dir / "team-00-roster.parquet",
+        data_dir / "team-00-coaches.parquet",
+    ]
+    datasets = ["roster", "coaches"]
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.side_effect = [1, 2]
+
+    context = IngestionContextPerDataset(
+        source_names=source_names,
+        season="2025-26",
+        filepaths=filepaths,
+        s3_keys=s3_keys,
+        datasets=datasets,
+        fetch_function=mocker.Mock(side_effect=ConnectionError("Timeout")),
+    )
+
+    with pytest.raises(ConnectionError, match="Timeout"):
+        run_ingestion_per_dataset(
+            context=context, db_writer=mock_db_writer, s3_writer=mock_s3_writer
+        )
+
+    ingestion_runs = [
+        call.kwargs["ingestion_run"]
+        for call in mock_db_writer.update.call_args_list
+    ]
+
+    assert mock_db_writer.update.call_count == 2
+    mock_s3_writer.write.assert_not_called()
+    assert {run.s3_key for run in ingestion_runs} == set(s3_keys)
+    assert all(run.status == Status.FAILURE for run in ingestion_runs)
+    assert all(run.error_message == "Timeout" for run in ingestion_runs)
+
+
+def test_run_ingestion_per_dataset_partial_failure(
+    mocker: MockerFixture, data_dir: Path
+) -> None:
+    source_names = ["team-00-roster", "team-00-coaches"]
+    s3_keys = [
+        "rosters/2025-26/team-00-roster.parquet",
+        "rosters/2025-26/team-00-coaches.parquet",
+    ]
+    filepaths = [
+        data_dir / "team-00-roster.parquet",
+        data_dir / "team-00-coaches.parquet",
+    ]
+    datasets = ["roster", "coaches"]
+    dataset_dfs = {
+        "roster": pd.DataFrame(),
+        "coaches": pd.DataFrame(data=[{"COACH_ID": 1}]),
+    }
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.side_effect = [1, 2]
+
+    context = IngestionContextPerDataset(
+        source_names=source_names,
+        season="2025-26",
+        filepaths=filepaths,
+        s3_keys=s3_keys,
+        datasets=datasets,
+        fetch_function=lambda: dataset_dfs,
+    )
+
+    with pytest.raises(DataFrameEmptyError, match="DataFrame is empty"):
+        run_ingestion_per_dataset(
+            context=context, db_writer=mock_db_writer, s3_writer=mock_s3_writer
+        )
+
+    ingestion_run = mock_db_writer.update.call_args.kwargs["ingestion_run"]
+
+    assert mock_db_writer.write.call_count == 2
+    mock_s3_writer.write.assert_not_called()
+    mock_db_writer.update.assert_called_once()
+    assert ingestion_run.s3_key == s3_keys[0]
+    assert ingestion_run.status == Status.FAILURE
+    assert ingestion_run.error_message == "DataFrame is empty"
 
 
 @pytest.mark.parametrize(

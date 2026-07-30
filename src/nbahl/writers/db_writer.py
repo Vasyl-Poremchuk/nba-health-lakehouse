@@ -45,7 +45,8 @@ class DBWriter:
     def create_table(self) -> None:
         """Create the ingestion_runs metadata table if it does not already exist.
 
-        Intended for one-time setup, not for regular pipeline runs.
+        Uses ``CREATE TABLE IF NOT EXISTS``, so it's idempotent and safe to
+        call on every pipeline run, not just for one-time setup.
         """
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
@@ -168,12 +169,12 @@ class DBWriter:
         )
 
     def get_stale_rows(self) -> list[dict[str, int | str]]:
-        """Return PENDING rows that have been running longer than ``INTERVAL_MINS`` minutes.
+        """Return PENDING rows that have been running longer than ``INTERVAL_MINUTES`` minutes.
 
         Returns:
             List of dicts with keys ``run_id`` and ``s3_key`` for each stale row.
         """
-        interval_value = timedelta(minutes=BaseConstants.INTERVAL_MINS)
+        interval_value = timedelta(minutes=BaseConstants.INTERVAL_MINUTES)
 
         with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
             cur.execute(

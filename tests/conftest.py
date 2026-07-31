@@ -10,6 +10,7 @@ from nbahl.common.constants import (
     PlayByPlayNBAApiSourceConstants,
 )
 from nbahl.common.enums import (
+    IsOnlyCurrentSeason,
     LeagueID,
     Period,
     PlayerOrTeamAbbreviation,
@@ -18,6 +19,8 @@ from nbahl.common.enums import (
 from nbahl.sources.box_score_nba_api_source import BoxScoreNBAApiSource
 from nbahl.sources.game_log_nba_api_source import GameLogNBAApiSource
 from nbahl.sources.play_by_play_nba_api_source import PlayByPlayNBAApiSource
+from nbahl.sources.player_info_nba_api_source import PlayerInfoNBAApiSource
+from nbahl.sources.team_roster_nba_api_source import TeamRosterNBAApiSource
 
 
 @pytest.fixture
@@ -212,3 +215,16 @@ def box_score_nba_api_source() -> BoxScoreNBAApiSource:
         end_period=Period.ALL,
         game_id_source_name_prefix=PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX,
     )
+
+
+@pytest.fixture
+def player_info_nba_api_source() -> PlayerInfoNBAApiSource:
+    return PlayerInfoNBAApiSource(
+        is_only_current_season=IsOnlyCurrentSeason.CURRENT_SEASON_ONLY,
+        league_id=LeagueID.NBA,
+    )
+
+
+@pytest.fixture
+def team_roster_nba_api_source() -> TeamRosterNBAApiSource:
+    return TeamRosterNBAApiSource(league_id=LeagueID.NBA)

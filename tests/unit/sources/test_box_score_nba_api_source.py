@@ -146,7 +146,7 @@ def test_get_box_score_game_logs_success(
     mocker: MockerFixture, box_score_nba_api_source: BoxScoreNBAApiSource
 ) -> None:
     mock_class = mocker.MagicMock()
-    mocker.patch("nbahl.sources.box_score_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
     mocker.patch.object(
         box_score_nba_api_source,
         "get_box_score_logs",
@@ -180,7 +180,6 @@ def test_get_box_score_game_logs_success(
     )
 
     box_score_game_logs = box_score_nba_api_source.get_box_score_game_logs(
-        season="2025-26",
         game_ids_by_source={
             "play-by-play-logs-0-0": ["0022500001", "0022500002"]
         },
@@ -196,11 +195,64 @@ def test_get_box_score_game_logs_success(
     )
 
 
+def test_get_box_score_game_logs_multiple_sources(
+    mocker: MockerFixture, box_score_nba_api_source: BoxScoreNBAApiSource
+) -> None:
+    mock_class = mocker.MagicMock()
+    mocker.patch("nbahl.common.utils.time.sleep")
+    mocker.patch.object(
+        box_score_nba_api_source,
+        "get_box_score_logs",
+        side_effect=[
+            {
+                "player_stats": pd.DataFrame(
+                    data=[
+                        {
+                            "gameId": "0022500001",
+                            "source_name": "play-by-play-logs-0-0",
+                        }
+                    ]
+                )
+            },
+            {
+                "player_stats": pd.DataFrame(
+                    data=[
+                        {
+                            "gameId": "0022500002",
+                            "source_name": "play-by-play-logs-0-1",
+                        }
+                    ]
+                )
+            },
+        ],
+    )
+    box_score_context = BoxScoreContext.model_construct(
+        box_score_class=mock_class,
+        datasets=["player_stats"],
+        includes_periods=True,
+    )
+
+    box_score_game_logs = box_score_nba_api_source.get_box_score_game_logs(
+        game_ids_by_source={
+            "play-by-play-logs-0-0": ["0022500001"],
+            "play-by-play-logs-0-1": ["0022500002"],
+        },
+        box_score_context=box_score_context,
+    )
+
+    assert "player_stats" in box_score_game_logs
+    assert len(box_score_game_logs["player_stats"]) == 2
+    assert set(box_score_game_logs["player_stats"]["source_name"]) == {
+        "play-by-play-logs-0-0",
+        "play-by-play-logs-0-1",
+    }
+
+
 def test_get_box_score_game_logs_no_dataframes(
     mocker: MockerFixture, box_score_nba_api_source: BoxScoreNBAApiSource
 ) -> None:
     mock_class = mocker.MagicMock()
-    mocker.patch("nbahl.sources.box_score_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
     mocker.patch.object(
         box_score_nba_api_source,
         "get_box_score_logs",
@@ -214,19 +266,18 @@ def test_get_box_score_game_logs_no_dataframes(
     )
 
     with pytest.raises(
-        DataFrameEmptyError, match="No DataFrames for any game_id"
+        DataFrameEmptyError, match="No DataFrames for any 'game_id'"
     ):
         box_score_nba_api_source.get_box_score_game_logs(
-            season="2025-26",
-            game_ids_by_source={},
+            game_ids_by_source={"play-by-play-logs-0-0": ["0022500001"]},
             box_score_context=box_score_context,
         )
 
 
-def test_get_box_score_game_logs_exceeded_max_total_game_failure_number(
+def test_get_box_score_game_logs_exceeded_max_total_failure_number(
     mocker: MockerFixture, box_score_nba_api_source: BoxScoreNBAApiSource
 ) -> None:
-    mocker.patch.object(BaseConstants, "MAX_TOTAL_GAME_FAILURE_NUMBER", new=3)
+    mocker.patch.object(BaseConstants, "MAX_TOTAL_FAILURE_NUMBER", new=3)
     mock_class = mocker.MagicMock()
     mocker.patch.object(
         box_score_nba_api_source,
@@ -238,7 +289,7 @@ def test_get_box_score_game_logs_exceeded_max_total_game_failure_number(
             ConnectionError("Timeout"),
         ],
     )
-    mocker.patch("nbahl.sources.box_score_nba_api_source.time.sleep")
+    mocker.patch("nbahl.common.utils.time.sleep")
 
     box_score_context = BoxScoreContext.model_construct(
         box_score_class=mock_class,
@@ -248,7 +299,6 @@ def test_get_box_score_game_logs_exceeded_max_total_game_failure_number(
 
     with pytest.raises(ConnectionError, match="Timeout"):
         box_score_nba_api_source.get_box_score_game_logs(
-            season="2025-26",
             game_ids_by_source={
                 "play-by-play-logs-0-0": [
                     "0022500001",

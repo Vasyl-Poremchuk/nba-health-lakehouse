@@ -16,8 +16,8 @@ class BaseConstants:
             NBA Stats API request to reduce rate-limiting.
         SLEEP_SECONDS: Seconds to wait between consecutive NBA Stats API
             requests to avoid rate-limiting.
-        INTERVAL_MINS: Minutes between scheduled ingestion runs.
-        MAX_TOTAL_GAME_FAILURE_NUMBER: Maximum number of individual game fetch
+        INTERVAL_MINUTES: Minutes between scheduled ingestion runs.
+        MAX_TOTAL_FAILURE_NUMBER: Maximum number of individual game fetch
             failures tolerated across a full season run before aborting.
     """
 
@@ -184,8 +184,8 @@ class BaseConstants:
         },
     )
     SLEEP_SECONDS = 0.75
-    INTERVAL_MINS = 10
-    MAX_TOTAL_GAME_FAILURE_NUMBER = 10
+    INTERVAL_MINUTES = 10
+    MAX_TOTAL_FAILURE_NUMBER = 10
 
 
 class GameLogNBAApiSourceConstants:
@@ -254,3 +254,34 @@ class BoxScoreNBAApiSourceConstants:
             "available_video",
         ],
     }
+
+
+class PlayerInfoNBAApiSourceConstants:
+    """Constants for the player info NBA API source.
+
+    Attributes:
+        SOURCE_DIR: Top-level directory under ``DATA_DIR`` grouping this
+            source's dated outputs, since player info isn't season-scoped.
+        SOURCE_NAME_PREFIX: Leading segment of the logical source name used to
+            construct Parquet filenames and S3 keys.
+    """
+
+    SOURCE_DIR = "player-bios"
+    SOURCE_NAME_PREFIX = "players-info"
+
+
+class TeamRosterNBAApiSourceConstants:
+    """Constants for the team roster NBA API source.
+
+    Attributes:
+        SOURCE_DIR: Top-level directory under ``DATA_DIR`` grouping this
+            source's dated outputs, since team roster info isn't season-scoped.
+        SOURCE_NAME_PREFIX: Leading segment of the logical source name used to
+            construct Parquet filenames and S3 keys.
+        TEAM_ROSTER_SOURCES: Ordered dataset names corresponding to the
+            positional DataFrames returned by ``CommonTeamRoster.get_data_frames()``.
+    """
+
+    SOURCE_DIR = "rosters"
+    SOURCE_NAME_PREFIX = "team"
+    TEAM_ROSTER_SOURCES: ClassVar[list[str]] = ["roster", "coaches"]

@@ -1,11 +1,19 @@
-from datetime import UTC, datetime
-
 import structlog
 
 from nbahl.common.enums import Status
-from nbahl.common.exceptions import DataFrameEmptyError
-from nbahl.common.models import IngestionContext, IngestionRun
-from nbahl.common.utils import write_to_parquet
+from nbahl.common.models import (
+    CommitContext,
+    FailureCommitContext,
+    IngestionContext,
+    IngestionContextPerDataset,
+    IngestionRun,
+    SuccessCommitContext,
+)
+from nbahl.common.utils import (
+    commit_failure,
+    commit_success,
+    get_current_datetime,
+)
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -33,83 +41,160 @@ def run_ingestion(
             if the initial PENDING record could not be inserted.
     """
     log.info(
-        "Starting game log ingestion",
+        "Starting ingestion",
         source_name=context.source_name,
         season=context.season,
     )
 
-    started_at = datetime.now(tz=UTC)
+    started_at = get_current_datetime()
     pending_ingestion_run = IngestionRun(
         s3_key=context.s3_key, started_at=started_at, status=Status.PENDING
     )
-    run_id: int | None = None
+
+    run_id = db_writer.write(ingestion_run=pending_ingestion_run)
+    commit_context = CommitContext(
+        run_id=run_id,
+        source_name=context.source_name,
+        s3_key=context.s3_key,
+        started_at=started_at,
+        season=context.season,
+    )
 
     try:
-        run_id = db_writer.write(ingestion_run=pending_ingestion_run)
+        dataset_df = context.fetch_function()
 
-        df = context.source.get_game_logs(season=context.season)
-        rows_in = len(df)
-
-        if df.empty:
-            raise DataFrameEmptyError("DataFrame is empty")
-
-        write_to_parquet(df=df, filepath=context.filepath)
-        log.debug(
-            "Wrote Parquet file",
-            filepath=str(context.filepath),
-            rows=rows_in,
-        )
-
-        s3_writer.write(filepath=context.filepath, key=context.s3_key)
-        log.debug("Uploaded file to S3", key=context.s3_key)
-
-        ended_at = datetime.now(tz=UTC)
-
-        success_ingestion_run = IngestionRun(
-            s3_key=context.s3_key,
-            started_at=started_at,
-            ended_at=ended_at,
-            rows_in=rows_in,
-            status=Status.SUCCESS,
-        )
-        db_writer.update(run_id=run_id, ingestion_run=success_ingestion_run)
-
-        log.info(
-            "Game log ingestion succeeded",
-            run_id=run_id,
-            s3_key=context.s3_key,
-            rows_in=rows_in,
+        commit_success(
+            context=SuccessCommitContext(
+                **commit_context.model_dump(),
+                dataset_df=dataset_df,
+                filepath=context.filepath,
+            ),
+            db_writer=db_writer,
+            s3_writer=s3_writer,
         )
     except Exception as exc:
-        ended_at = datetime.now(tz=UTC)
-
-        failed_ingestion_run = IngestionRun(
-            s3_key=context.s3_key,
-            started_at=started_at,
-            ended_at=ended_at,
-            status=Status.FAILURE,
-            error_message=str(exc),
-        )
-
-        if run_id is not None:
-            db_writer.update(run_id=run_id, ingestion_run=failed_ingestion_run)
-
-        log.error(
-            "Game log ingestion failed",
-            run_id=run_id,
-            s3_key=context.s3_key,
-            season=context.season,
-            error=str(exc),
-            exc_info=True,
+        commit_failure(
+            context=FailureCommitContext(
+                **commit_context.model_dump(), error_message=str(exc)
+            ),
+            db_writer=db_writer,
         )
         raise
+
+
+def run_ingestion_per_dataset(
+    context: IngestionContextPerDataset,
+    db_writer: DBWriter,
+    s3_writer: S3Writer,
+) -> None:
+    """Run an ingestion cycle for multiple datasets fetched by one shared call.
+
+    A 2-phase commit, extended to N datasets. Phase 1 inserts one ``PENDING``
+    record per dataset before any work begins. ``context.fetch_function()``
+    is then called once, returning all datasets at once; if it raises, every
+    pending record is marked ``FAILURE`` and the exception is re-raised
+    immediately. Otherwise each dataset is written and uploaded independently:
+    a dataset's own failure (e.g. an empty DataFrame or an S3 error) marks
+    only that dataset's record ``FAILURE`` and re-raises immediately, which
+    also aborts the loop over the remaining datasets - any dataset not yet
+    reached stays ``PENDING`` (not ``FAILURE``) until a later ``reconcile``
+    call resolves it, rather than being attempted.
+
+    Args:
+        context: Runtime context carrying the shared fetch function, and
+            per-dataset paths and identifiers.
+        db_writer: Writer used to persist the ingestion run metadata.
+        s3_writer: Writer used to upload the Parquet files to S3.
+
+    Raises:
+        Exception: Re-raised after the relevant FAILURE record(s) are
+            written - either for every dataset (shared fetch failure) or for
+            the one dataset that failed (per-dataset failure).
+    """
+    started_at = get_current_datetime()
+    pending_ingestion_runs = [
+        IngestionRun(
+            s3_key=s3_key, started_at=started_at, status=Status.PENDING
+        )
+        for s3_key in context.s3_keys
+    ]
+    run_ids: list[int] = []
+
+    log.info("Starting ingestion")
+
+    for pending_ingestion_run in pending_ingestion_runs:
+        run_id = db_writer.write(ingestion_run=pending_ingestion_run)
+
+        run_ids.append(run_id)
+
+    try:
+        dataset_dfs = context.fetch_function()
+    except Exception as exc:
+        for run_id, source_name, s3_key in zip(
+            run_ids, context.source_names, context.s3_keys, strict=True
+        ):
+            commit_failure(
+                context=FailureCommitContext(
+                    run_id=run_id,
+                    source_name=source_name,
+                    s3_key=s3_key,
+                    started_at=started_at,
+                    season=context.season,
+                    error_message=str(exc),
+                ),
+                db_writer=db_writer,
+            )
+
+        raise
+
+    for dataset, source_name, filepath, s3_key, run_id in zip(
+        context.datasets,
+        context.source_names,
+        context.filepaths,
+        context.s3_keys,
+        run_ids,
+        strict=True,
+    ):
+        commit_context = CommitContext(
+            run_id=run_id,
+            source_name=source_name,
+            s3_key=s3_key,
+            started_at=started_at,
+            season=context.season,
+        )
+
+        try:
+            log.info(
+                "Starting ingestion",
+                source_name=source_name,
+                season=context.season,
+            )
+
+            dataset_df = dataset_dfs[dataset]
+            commit_success(
+                context=SuccessCommitContext(
+                    **commit_context.model_dump(),
+                    dataset_df=dataset_df,
+                    filepath=filepath,
+                ),
+                db_writer=db_writer,
+                s3_writer=s3_writer,
+            )
+        except Exception as exc:
+            commit_failure(
+                context=FailureCommitContext(
+                    **commit_context.model_dump(), error_message=str(exc)
+                ),
+                db_writer=db_writer,
+            )
+            raise
 
 
 def reconcile(db_writer: DBWriter, s3_writer: S3Writer) -> None:
     """Resolve stale PENDING runs left behind by mid-flight pipeline crashes.
 
     Queries ingestion_runs for rows that have been PENDING longer than
-    ``INTERVAL_MINS`` minutes, then checks S3 for each. Rows whose S3 object
+    ``INTERVAL_MINUTES`` minutes, then checks S3 for each. Rows whose S3 object
     exists are marked ``SUCCESS``; rows with no S3 object are marked ``FAILURE``.
     Updates are applied in two batch calls to minimise round-trips.
 

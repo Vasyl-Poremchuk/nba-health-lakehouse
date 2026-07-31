@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 
 
 class LeagueID(StrEnum):
@@ -38,3 +38,10 @@ class Period(StrEnum):
     """NBA API period codes used by play-by-play endpoints."""
 
     ALL = "0"
+
+
+class IsOnlyCurrentSeason(IntEnum):
+    """Whether the CommonAllPlayers endpoint should return only current-season players."""
+
+    CURRENT_SEASON_ONLY = 1
+    ALL_SEASONS = 0

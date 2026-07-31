@@ -145,7 +145,7 @@ class BoxScoreNBAApiSource:
             Exception: Re-raised when the total number of game failures reaches
                 ``BaseConstants.MAX_TOTAL_FAILURE_NUMBER``.
         """
-        box_score_logs_by_dataset: dict[str, pd.DataFrame] = {}
+        dfs_by_dataset: dict[str, list[pd.DataFrame]] = {}
 
         for game_id_source_name, game_ids in game_ids_by_source.items():
             box_score_logs_for_source = fetch_data_by_column_ids_per_dataset(
@@ -158,7 +158,13 @@ class BoxScoreNBAApiSource:
                 ),
             )
 
-            box_score_logs_by_dataset.update(box_score_logs_for_source)
+            for dataset, df in box_score_logs_for_source.items():
+                dfs_by_dataset.setdefault(dataset, []).append(df)
+
+        box_score_logs_by_dataset = {
+            dataset: pd.concat(objs=dfs)
+            for dataset, dfs in dfs_by_dataset.items()
+        }
 
         return box_score_logs_by_dataset
 

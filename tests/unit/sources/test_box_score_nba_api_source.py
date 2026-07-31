@@ -195,6 +195,59 @@ def test_get_box_score_game_logs_success(
     )
 
 
+def test_get_box_score_game_logs_multiple_sources(
+    mocker: MockerFixture, box_score_nba_api_source: BoxScoreNBAApiSource
+) -> None:
+    mock_class = mocker.MagicMock()
+    mocker.patch("nbahl.common.utils.time.sleep")
+    mocker.patch.object(
+        box_score_nba_api_source,
+        "get_box_score_logs",
+        side_effect=[
+            {
+                "player_stats": pd.DataFrame(
+                    data=[
+                        {
+                            "gameId": "0022500001",
+                            "source_name": "play-by-play-logs-0-0",
+                        }
+                    ]
+                )
+            },
+            {
+                "player_stats": pd.DataFrame(
+                    data=[
+                        {
+                            "gameId": "0022500002",
+                            "source_name": "play-by-play-logs-0-1",
+                        }
+                    ]
+                )
+            },
+        ],
+    )
+    box_score_context = BoxScoreContext.model_construct(
+        box_score_class=mock_class,
+        datasets=["player_stats"],
+        includes_periods=True,
+    )
+
+    box_score_game_logs = box_score_nba_api_source.get_box_score_game_logs(
+        game_ids_by_source={
+            "play-by-play-logs-0-0": ["0022500001"],
+            "play-by-play-logs-0-1": ["0022500002"],
+        },
+        box_score_context=box_score_context,
+    )
+
+    assert "player_stats" in box_score_game_logs
+    assert len(box_score_game_logs["player_stats"]) == 2
+    assert set(box_score_game_logs["player_stats"]["source_name"]) == {
+        "play-by-play-logs-0-0",
+        "play-by-play-logs-0-1",
+    }
+
+
 def test_get_box_score_game_logs_no_dataframes(
     mocker: MockerFixture, box_score_nba_api_source: BoxScoreNBAApiSource
 ) -> None:

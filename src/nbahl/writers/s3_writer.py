@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import boto3
@@ -68,3 +69,13 @@ class S3Writer:
                 "An unexpected error occurred", error=str(exc), exc_info=True
             )
             raise
+
+    def bulk_write(self, filepaths: list[Path], keys: list[str]) -> None:
+        """Upload multiple local files to S3 concurrently.
+
+        Args:
+            filepaths: Local files to upload.
+            keys: S3 object keys, positionally matched to ``filepaths``.
+        """
+        with ThreadPoolExecutor() as executor:
+            executor.map(self.write, filepaths, keys)

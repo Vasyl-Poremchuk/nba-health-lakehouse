@@ -588,3 +588,14 @@ def commit_failure(context: FailureCommitContext, db_writer: DBWriter) -> None:
         error=context.error_message,
         exc_info=True,
     )
+
+
+def save_to_pdf(filepath: Path, content: bytes) -> None:
+    """Write binary content to a file on disk.
+
+    Args:
+        filepath: Destination path; parent directory must already exist.
+        content: Raw bytes to write (typically a PDF response body).
+    """
+    with open(file=filepath, mode="wb") as file:
+        file.write(content)

@@ -18,6 +18,7 @@ from nbahl.common.enums import (
 )
 from nbahl.sources.box_score_nba_api_source import BoxScoreNBAApiSource
 from nbahl.sources.game_log_nba_api_source import GameLogNBAApiSource
+from nbahl.sources.nba_injury_report_source import NBAInjuryReportSource
 from nbahl.sources.play_by_play_nba_api_source import PlayByPlayNBAApiSource
 from nbahl.sources.player_info_nba_api_source import PlayerInfoNBAApiSource
 from nbahl.sources.team_roster_nba_api_source import TeamRosterNBAApiSource
@@ -219,6 +220,12 @@ def box_score_nba_api_source() -> BoxScoreNBAApiSource:
 
 @pytest.fixture
 def player_info_nba_api_source() -> PlayerInfoNBAApiSource:
+    """Build a ``PlayerInfoNBAApiSource`` scoped to current-season NBA players.
+
+    Returns:
+        A ``PlayerInfoNBAApiSource`` instance parameterized with
+        ``IsOnlyCurrentSeason.CURRENT_SEASON_ONLY`` and ``LeagueID.NBA``.
+    """
     return PlayerInfoNBAApiSource(
         is_only_current_season=IsOnlyCurrentSeason.CURRENT_SEASON_ONLY,
         league_id=LeagueID.NBA,
@@ -227,4 +234,39 @@ def player_info_nba_api_source() -> PlayerInfoNBAApiSource:
 
 @pytest.fixture
 def team_roster_nba_api_source() -> TeamRosterNBAApiSource:
+    """Build a ``TeamRosterNBAApiSource`` for NBA teams.
+
+    Returns:
+        A ``TeamRosterNBAApiSource`` instance parameterized with
+        ``LeagueID.NBA``.
+    """
     return TeamRosterNBAApiSource(league_id=LeagueID.NBA)
+
+
+@pytest.fixture
+def nba_injury_report_source() -> NBAInjuryReportSource:
+    """Build an ``NBAInjuryReportSource`` for the 2026 season.
+
+    Returns:
+        An ``NBAInjuryReportSource`` instance configured for 2026 with
+        15-minute report frequency and the ``"%Y-%m-%d_%I_%M%p"`` filename
+        date format used for late-2025-and-later PDFs.
+    """
+    return NBAInjuryReportSource(
+        year=2026, frequency="15min", date_format="%Y-%m-%d_%I_%M%p"
+    )
+
+
+@pytest.fixture
+def injury_report_filepath() -> Path:
+    """Return the path to the sample injury report PDF fixture.
+
+    Returns:
+        Absolute path to ``tests/fixtures/Injury-Report_2026-06-13_12_45PM.pdf``,
+        a real NBA injury report PDF used to exercise the full parsing pipeline.
+    """
+    return (
+        Path(__file__).parent
+        / "fixtures"
+        / "Injury-Report_2026-06-13_12_45PM.pdf"
+    )

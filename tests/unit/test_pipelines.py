@@ -11,9 +11,16 @@ from requests.exceptions import ConnectionError
 from nbahl.common.enums import Status
 from nbahl.common.exceptions import DataFrameEmptyError
 from nbahl.common.models import IngestionContext, IngestionContextPerDataset
-from nbahl.pipelines import reconcile, run_ingestion, run_ingestion_per_dataset
+from nbahl.common.utils import get_s3_key
+from nbahl.pipelines import (
+    reconcile,
+    run_ingestion,
+    run_ingestion_per_dataset,
+    run_raw_ingestion,
+)
 from nbahl.protocols import GameLogSource
 from nbahl.sources.game_log_nba_api_source import GameLogNBAApiSource
+from nbahl.sources.nba_injury_report_source import NBAInjuryReportSource
 from nbahl.sources.play_by_play_nba_api_source import PlayByPlayNBAApiSource
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
@@ -546,3 +553,129 @@ def test_reconcile_non_404_error(mocker: MockerFixture) -> None:
 
     assert error_response["Code"] == "403"
     assert error_response["Message"] == "Forbidden"
+
+
+def test_run_raw_ingestion_success(
+    mocker: MockerFixture,
+    tmp_path: Path,
+) -> None:
+    raw_dir = tmp_path / "injuries" / "2026" / "raw"
+    raw_filepaths = [raw_dir / "report1.pdf", raw_dir / "report2.pdf"]
+    expected_s3_keys = [
+        get_s3_key(filepath=fp, num_trailing_parts=4) for fp in raw_filepaths
+    ]
+
+    mock_source = mocker.MagicMock(spec=NBAInjuryReportSource)
+    mock_source.year = 2026
+    mock_source.get_base_dir.return_value = raw_dir
+    mock_source.get_raw_filepaths.return_value = raw_filepaths
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.return_value = 1
+
+    run_raw_ingestion(
+        source=mock_source, db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )
+
+    ingestion_run = mock_db_writer.update.call_args.kwargs["ingestion_run"]
+    bulk_write_kwargs = mock_s3_writer.bulk_write.call_args.kwargs
+
+    mock_source.fetch_injury_reports.assert_called_once()
+    mock_s3_writer.bulk_write.assert_called_once()
+    mock_db_writer.update.assert_called_once()
+    assert ingestion_run.status == Status.SUCCESS
+    assert ingestion_run.error_message is None
+    assert bulk_write_kwargs["filepaths"] == raw_filepaths
+    assert bulk_write_kwargs["keys"] == expected_s3_keys
+
+
+def test_run_raw_ingestion_fetch_failure(
+    mocker: MockerFixture,
+    tmp_path: Path,
+) -> None:
+    raw_dir = tmp_path / "injuries" / "2026" / "raw"
+
+    mock_source = mocker.MagicMock(spec=NBAInjuryReportSource)
+    mock_source.year = 2026
+    mock_source.get_base_dir.return_value = raw_dir
+    mock_source.fetch_injury_reports.side_effect = RuntimeError(
+        "network failure"
+    )
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.return_value = 1
+
+    with pytest.raises(RuntimeError, match="network failure"):
+        run_raw_ingestion(
+            source=mock_source,
+            db_writer=mock_db_writer,
+            s3_writer=mock_s3_writer,
+        )
+
+    ingestion_run = mock_db_writer.update.call_args.kwargs["ingestion_run"]
+
+    mock_db_writer.update.assert_called_once()
+    assert ingestion_run.status == Status.FAILURE
+    assert ingestion_run.error_message == "network failure"
+
+
+def test_run_raw_ingestion_s3_bulk_upload_failure(
+    mocker: MockerFixture,
+    tmp_path: Path,
+) -> None:
+    raw_dir = tmp_path / "injuries" / "2026" / "raw"
+    raw_filepaths = [raw_dir / "report1.pdf"]
+
+    mock_source = mocker.MagicMock(spec=NBAInjuryReportSource)
+    mock_source.year = 2026
+    mock_source.get_base_dir.return_value = raw_dir
+    mock_source.get_raw_filepaths.return_value = raw_filepaths
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.return_value = 1
+    mock_s3_writer.bulk_write.side_effect = S3UploadFailedError(
+        "Failed to upload report1.pdf: An error occurred (NoSuchBucket)"
+    )
+
+    with pytest.raises(S3UploadFailedError, match="NoSuchBucket"):
+        run_raw_ingestion(
+            source=mock_source,
+            db_writer=mock_db_writer,
+            s3_writer=mock_s3_writer,
+        )
+
+    ingestion_run = mock_db_writer.update.call_args.kwargs["ingestion_run"]
+
+    mock_db_writer.update.assert_called_once()
+    assert ingestion_run.status == Status.FAILURE
+    assert "NoSuchBucket" in ingestion_run.error_message
+
+
+def test_run_raw_ingestion_no_run_id(
+    mocker: MockerFixture,
+    tmp_path: Path,
+) -> None:
+    raw_dir = tmp_path / "injuries" / "2026" / "raw"
+
+    mock_source = mocker.MagicMock(spec=NBAInjuryReportSource)
+    mock_source.year = 2026
+    mock_source.get_base_dir.return_value = raw_dir
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_db_writer.write.side_effect = RuntimeError(
+        "INSERT INTO ingestion_runs returned no run_id"
+    )
+
+    with pytest.raises(
+        RuntimeError, match="INSERT INTO ingestion_runs returned no run_id"
+    ):
+        run_raw_ingestion(
+            source=mock_source,
+            db_writer=mock_db_writer,
+            s3_writer=mock_s3_writer,
+        )
+
+    mock_db_writer.update.assert_not_called()

@@ -45,3 +45,10 @@ class IsOnlyCurrentSeason(IntEnum):
 
     CURRENT_SEASON_ONLY = 1
     ALL_SEASONS = 0
+
+
+class DirType(StrEnum):
+    """Filesystem directory tier for a data source's output files."""
+
+    RAW = "raw"
+    PARSED = "parsed"

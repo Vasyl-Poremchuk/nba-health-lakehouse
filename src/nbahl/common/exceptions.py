@@ -12,3 +12,7 @@ class GameIDsBySourceEmptyError(Exception):
 
 class NoSuffixesError(Exception):
     """Raised when no suffixes are specified for the source name."""
+
+
+class NoTableError(Exception):
+    """Raised when no table is found in the PDF file."""

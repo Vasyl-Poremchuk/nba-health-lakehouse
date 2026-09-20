@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "boto3>=1.43.26",
+    "html5lib>=1.1",
+    "lxml>=6.1.1",
     "nba-api>=1.11.4",
     "pandas>=3.0.3",
+    "pdfplumber>=0.11.10",
     "psycopg>=3.3.4",
     "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
@@ -23,7 +26,6 @@ package = false
 [dependency-groups]
 dev = [
     "apache-airflow[amazon]>=3.2.2",
-    "boto3>=1.43.26",
     "commitizen>=4.16.2",
     "mypy>=2.1.0",
     "pendulum>=3.2.0",

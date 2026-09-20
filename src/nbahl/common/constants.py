@@ -285,3 +285,34 @@ class TeamRosterNBAApiSourceConstants:
     SOURCE_DIR = "rosters"
     SOURCE_NAME_PREFIX = "team"
     TEAM_ROSTER_SOURCES: ClassVar[list[str]] = ["roster", "coaches"]
+
+
+class NBAInjuryReportSourceConstants:
+    """Constants for the NBA injury report PDF source.
+
+    Attributes:
+        BASE_URL: Base URL of the NBA injury report PDF storage.
+        REFERER: HTTP Referer header value sent with each PDF download request.
+        SOURCE_DIR: Local subdirectory name under the data root for injury reports.
+        FILENAME_SUFFIX: Fixed prefix that precedes the timestamp in every PDF filename.
+        SOURCE_NAME: Logical source name used for Parquet filenames and S3 keys.
+        INJURY_REPORT_HEADER_INDEX: Index into the page word list where the
+            report date/time header text begins (words before this index are the
+            document title).
+        FIRST_COLUMN_INDEX: Index into the page word list where data words start
+            (words before this index are title and column header words).
+        LAST_COLUMN_WIDTH: Assumed width (in PDF points) used to compute the right
+            boundary of the last column on a page.
+        COLUMN_LEFT_OFFSET: Small offset (in PDF points) subtracted from a
+            column's detected x0 position to widen its left boundary slightly.
+    """
+
+    BASE_URL = "https://ak-static.cms.nba.com/referee/injury"
+    REFERER = "https://www.nba.com/"
+    SOURCE_DIR = "injuries"
+    FILENAME_SUFFIX = "Injury-Report_"
+    SOURCE_NAME = "injuries"
+    INJURY_REPORT_HEADER_INDEX = 2
+    FIRST_COLUMN_INDEX = 5
+    LAST_COLUMN_WIDTH = 500
+    COLUMN_LEFT_OFFSET = 1

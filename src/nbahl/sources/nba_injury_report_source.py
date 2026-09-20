@@ -1,6 +1,7 @@
 import random
 import re
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
 from functools import partial
 from itertools import zip_longest
 from pathlib import Path
@@ -73,6 +74,7 @@ class NBAInjuryReportSource:
                 start=self._start, end=self._end, freq=self.frequency
             )
             if not (7 <= date_point.month <= 9)
+            and date_point <= datetime.now()
         ]
 
         return date_range
@@ -160,7 +162,9 @@ class NBAInjuryReportSource:
                 the retry policy (i.e. status codes other than 408, 429, 500,
                 502, 503, or 504), or re-raised after retries are exhausted.
         """
-        response = requests.get(url=url, headers=self._build_headers())
+        response = requests.get(
+            url=url, headers=self._build_headers(), timeout=30
+        )
         response.raise_for_status()
 
         filepath.parent.mkdir(parents=True, exist_ok=True)

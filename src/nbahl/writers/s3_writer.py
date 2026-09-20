@@ -78,4 +78,4 @@ class S3Writer:
             keys: S3 object keys, positionally matched to ``filepaths``.
         """
         with ThreadPoolExecutor() as executor:
-            executor.map(self.write, filepaths, keys)
+            list(executor.map(self.write, filepaths, keys))

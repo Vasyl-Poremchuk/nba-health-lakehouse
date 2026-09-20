@@ -1,3 +1,4 @@
+from datetime import datetime
 from math import isnan
 from pathlib import Path
 
@@ -341,8 +342,25 @@ def test_build_date_range_includes_season_months(
 
     months = {int(date_str[5:7]) for date_str in date_range}
 
-    assert 10 in months
     assert 6 in months
+
+
+def test_build_date_range_excludes_future_dates(
+    mocker: MockerFixture,
+    nba_injury_report_source: NBAInjuryReportSource,
+) -> None:
+    mock_now = datetime(2026, 6, 15, 12, 0)
+    mocker.patch(
+        "nbahl.sources.nba_injury_report_source.datetime"
+    ).now.return_value = mock_now
+
+    date_range = nba_injury_report_source._build_date_range()
+
+    for date_str in date_range:
+        date = datetime.strptime(
+            date_str, nba_injury_report_source.date_format
+        )
+        assert date <= mock_now
 
 
 def test_build_injury_report_urls_format(

@@ -229,10 +229,16 @@ def test_ingest_play_by_play_game_logs_success(
         "get_game_logs",
         return_value=play_by_play_logs_0_0_df,
     )
+    mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.should_ingest",
+        return_value=True,
+    )
 
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.play_by_play_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.reconcile"
+    )
 
     ingest_play_by_play_game_logs(
         season="2025-26",
@@ -252,3 +258,40 @@ def test_ingest_play_by_play_game_logs_success(
     assert ingestion_run.status == Status.SUCCESS
     assert ingestion_run.error_message is None
     assert key == "2025-26/play-by-play-logs-0-0.parquet"
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )
+
+
+def test_ingest_play_by_play_game_logs_should_not_ingest(
+    mocker: MockerFixture,
+) -> None:
+    mock_should_ingest = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.should_ingest",
+        return_value=False,
+    )
+    mock_run_ingestion = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.run_ingestion"
+    )
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.play_by_play_nba_api_source.reconcile"
+    )
+
+    ingest_play_by_play_game_logs(
+        season="2025-26",
+        start_period=Period.ALL,
+        end_period=Period.ALL,
+        db_writer=mock_db_writer,
+        s3_writer=mock_s3_writer,
+    )
+
+    mock_should_ingest.assert_called_once_with(
+        s3_key="2025-26/play-by-play-logs-0-0.parquet",
+        db_writer=mock_db_writer,
+    )
+    mock_run_ingestion.assert_not_called()
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )

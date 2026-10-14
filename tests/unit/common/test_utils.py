@@ -24,19 +24,25 @@ from nbahl.common.exceptions import (
 )
 from nbahl.common.utils import (
     add_game_id_source_name,
+    build_seasons,
     build_source_name,
     calculate_item_lengths,
     collect_game_ids_by_source,
+    fetch_data_by_column_ids,
     get_column_ids,
     get_current_date,
     get_filepath,
     get_game_id_source_filepaths,
     get_game_ids_by_source,
     get_s3_key,
+    get_season,
     read_from_parquet,
+    reset_nba_session,
+    should_ingest,
     write_to_parquet,
     zip_datasets,
 )
+from nbahl.writers.db_writer import DBWriter
 
 
 @pytest.mark.parametrize(
@@ -571,3 +577,89 @@ def test_get_current_date(mocker: MockerFixture) -> None:
     )
 
     assert get_current_date() == "2026-01-01"
+
+
+@pytest.mark.parametrize(
+    "start_year, end_year, expected_seasons",
+    [
+        (2024, 2026, ["2024-25", "2025-26"]),
+        (1999, 2001, ["1999-00", "2000-01"]),
+        (2025, 2026, ["2025-26"]),
+        (2026, 2026, []),
+    ],
+)
+def test_build_seasons(
+    start_year: int, end_year: int, expected_seasons: list[str]
+) -> None:
+    seasons = build_seasons(start_year=start_year, end_year=end_year)
+
+    assert seasons == expected_seasons
+
+
+def test_get_season(mocker: MockerFixture) -> None:
+    mocker.patch(
+        "nbahl.common.utils.get_current_datetime",
+        return_value=datetime.strptime(
+            "2026-01-01 00:00:00", "%Y-%m-%d %H:%M:%S"
+        ),
+    )
+    season = get_season()
+
+    assert season == "2025-26"
+
+
+def test_should_ingest_true(mocker: MockerFixture) -> None:
+    s3_key = "injuries/2026/parsed/injuries.parquet"
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_db_writer.get_latest_successful_ingestion.return_value = None
+
+    result = should_ingest(s3_key=s3_key, db_writer=mock_db_writer)
+
+    mock_db_writer.get_latest_successful_ingestion.assert_called_once_with(
+        s3_key=s3_key
+    )
+    assert result is True
+
+
+def test_should_ingest_false(mocker: MockerFixture) -> None:
+    s3_key = "injuries/2025/parsed/injuries.parquet"
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_db_writer.get_latest_successful_ingestion.return_value = {
+        "s3_key": s3_key
+    }
+
+    result = should_ingest(s3_key=s3_key, db_writer=mock_db_writer)
+
+    mock_db_writer.get_latest_successful_ingestion.assert_called_once_with(
+        s3_key=s3_key
+    )
+    assert result is False
+
+
+def test_reset_nba_session(mocker: MockerFixture) -> None:
+    mock_set_session = mocker.patch(
+        "nbahl.common.utils.NBAStatsHTTP.set_session"
+    )
+    mock_session = mocker.patch("nbahl.common.utils.requests.Session")
+
+    reset_nba_session()
+
+    mock_session.assert_called_once_with()
+    mock_set_session.assert_called_once_with(session=mock_session.return_value)
+
+
+def test_fetch_data_by_column_ids_resets_session_periodically(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("nbahl.common.utils.time.sleep")
+    mocker.patch.object(BaseConstants, "RESET_SESSION_AFTER_TOTAL_IDS", new=2)
+    mock_reset = mocker.patch("nbahl.common.utils.reset_nba_session")
+
+    output_df = fetch_data_by_column_ids(
+        column_ids=["1", "2", "3", "4", "5"],
+        id_label="player_id",
+        fetch_function=lambda column_id: pd.DataFrame({"id": [column_id]}),
+    )
+
+    assert mock_reset.call_count == 2
+    assert len(output_df) == 5

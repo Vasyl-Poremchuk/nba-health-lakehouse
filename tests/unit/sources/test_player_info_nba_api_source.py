@@ -337,7 +337,9 @@ def test_ingest_all_players_info_success(
     )
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.player_info_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.player_info_nba_api_source.reconcile"
+    )
 
     source_filepath = ingest_all_players_info(
         source=player_info_nba_api_source,
@@ -359,6 +361,7 @@ def test_ingest_all_players_info_success(
     assert source_filepath.as_posix().endswith(
         "2025-26/players-info-1-00.parquet"
     )
+    mock_reconcile.assert_called_once()
 
 
 def test_ingest_players_detail_info(
@@ -395,7 +398,9 @@ def test_ingest_players_detail_info(
 
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.player_info_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.player_info_nba_api_source.reconcile"
+    )
     mocker.patch(
         "nbahl.common.utils.get_current_date", return_value="2026-01-01"
     )
@@ -422,3 +427,4 @@ def test_ingest_players_detail_info(
     assert ingestion_run.status == Status.SUCCESS
     assert ingestion_run.error_message is None
     assert key == "player-bios/2026-01-01/players-info-1-00.parquet"
+    mock_reconcile.assert_called_once()

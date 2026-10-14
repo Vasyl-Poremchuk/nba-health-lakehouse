@@ -19,10 +19,14 @@ from nbahl.common.utils import (
     build_context_attributes,
     fetch_data_by_column_ids_per_dataset,
     get_game_ids_by_source,
+    should_ingest,
     zip_datasets,
 )
-from nbahl.config import Settings
-from nbahl.pipelines import reconcile, run_ingestion_per_dataset
+from nbahl.pipelines import (
+    ingest_by_season,
+    reconcile,
+    run_ingestion_per_dataset,
+)
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -181,8 +185,10 @@ def ingest_box_score_game_logs(
     Iterates over all entries in ``BoxScoreNBAApiSourceConstants.BOX_SCORE_SOURCES``,
     fetches game logs for each (endpoint, dataset) combination, writes the result
     as a Parquet file locally, uploads it to S3, and records the ingestion run
-    metadata in the database. Always calls ``reconcile`` in a ``finally`` block
-    to resolve any stale PENDING rows left by crashes.
+    metadata in the database. Datasets that already have a successful
+    ingestion (see ``should_ingest``) are skipped, and a box score source whose
+    datasets are all skipped is not fetched at all. Always calls ``reconcile``
+    in a ``finally`` block to resolve any stale PENDING rows left by crashes.
 
     Args:
         season: NBA season string (e.g. ``"2025-26"``).
@@ -196,13 +202,14 @@ def ingest_box_score_game_logs(
         end_period=end_period,
         game_id_source_name_prefix=PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX,
     )
-    game_ids_by_source = get_game_ids_by_source(
-        season=season,
-        game_id_source_name_prefix=source.game_id_source_name_prefix,
-        game_id_column="gameId",
-    )
 
     try:
+        game_ids_by_source = get_game_ids_by_source(
+            season=season,
+            game_id_source_name_prefix=source.game_id_source_name_prefix,
+            game_id_column="gameId",
+        )
+
         for (
             (box_score_class, box_score_source),
             datasets,
@@ -215,6 +222,7 @@ def ingest_box_score_game_logs(
                 includes_periods=includes_periods,
             )
             partial_context: dict[str, list[str | Path]] = {}
+            datasets_to_ingest: list[str] = []
 
             for dataset in datasets:
                 context_attributes = build_context_attributes(
@@ -227,15 +235,30 @@ def ingest_box_score_game_logs(
                     ],
                     season=season,
                 )
+                s3_key = str(context_attributes["s3_key"])
+
+                if not should_ingest(s3_key=s3_key, db_writer=db_writer):
+                    log.info("Ingestion already completed", s3_key=s3_key)
+                    continue
+
+                datasets_to_ingest.append(dataset)
 
                 for attribute, value in context_attributes.items():
                     partial_context.setdefault(f"{attribute}s", []).append(
                         value
                     )
 
+            if not datasets_to_ingest:
+                log.info(
+                    "All datasets already ingested",
+                    season=season,
+                    datasets=datasets,
+                )
+                continue
+
             context = IngestionContextPerDataset(
                 season=season,
-                datasets=datasets,
+                datasets=datasets_to_ingest,
                 fetch_function=partial(
                     source.get_box_score_game_logs,
                     game_ids_by_source=game_ids_by_source,
@@ -252,16 +275,8 @@ def ingest_box_score_game_logs(
 
 
 if __name__ == "__main__":
-    settings = Settings()
-    db_writer = DBWriter(settings=settings)
-    db_writer.create_table()
-    ingest_box_score_game_logs(
-        season="2025-26",
+    ingest_by_season(
+        function=ingest_box_score_game_logs,
         start_period=Period.ALL,
         end_period=Period.ALL,
-        db_writer=db_writer,
-        s3_writer=S3Writer(
-            bucket=f"nbahl-bronze-{settings.nbahl_env}",
-            profile_name=settings.profile_name.get_secret_value(),
-        ),
     )

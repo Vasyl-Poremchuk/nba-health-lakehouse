@@ -280,7 +280,9 @@ def test_ingest_team_rosters_info_success(
     )
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.team_roster_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.team_roster_nba_api_source.reconcile"
+    )
     mocker.patch(
         "nbahl.common.utils.get_current_date", return_value="2026-01-01"
     )
@@ -325,3 +327,4 @@ def test_ingest_team_rosters_info_success(
         run.status == Status.SUCCESS and run.error_message is None
         for run in ingestion_runs_by_key.values()
     )
+    mock_reconcile.assert_called_once()

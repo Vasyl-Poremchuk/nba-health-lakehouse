@@ -5,7 +5,9 @@ from enum import IntEnum, StrEnum
 from pathlib import Path
 
 import pandas as pd
+import requests
 import structlog
+from nba_api.stats.library.http import NBAStatsHTTP
 
 from nbahl.common.constants import BaseConstants
 from nbahl.common.enums import Status
@@ -421,7 +423,7 @@ def fetch_data_by_column_ids_per_dataset(
     failed_ids: list[str] = []
     total_failures = 0
 
-    for column_id in column_ids:
+    for index, column_id in enumerate(column_ids, start=1):
         log.info("Fetching data", id_label=id_label, id=str(column_id))
 
         try:
@@ -444,6 +446,13 @@ def fetch_data_by_column_ids_per_dataset(
 
             failed_ids.append(str(column_id))
             total_failures += 1
+
+        if index % BaseConstants.RESET_SESSION_AFTER_TOTAL_IDS == 0:
+            log.info(
+                "Resetting NBA session",
+                reset_threshold=BaseConstants.RESET_SESSION_AFTER_TOTAL_IDS,
+            )
+            reset_nba_session()
 
     if failed_ids:
         log.warning(
@@ -599,3 +608,64 @@ def save_to_pdf(filepath: Path, content: bytes) -> None:
     """
     with open(file=filepath, mode="wb") as file:
         file.write(content)
+
+
+def build_seasons(start_year: int, end_year: int) -> list[str]:
+    """Build NBA season strings for a range of season start years.
+
+    Args:
+        start_year: First season start year (inclusive).
+        end_year: Season start year to stop at (exclusive).
+
+    Returns:
+        Season strings such as ``["2024-25", "2025-26"]``; empty when
+        ``start_year >= end_year``.
+    """
+    seasons = [
+        f"{year}-{(year + 1) % 100:02}" for year in range(start_year, end_year)
+    ]
+
+    return seasons
+
+
+def get_season() -> str:
+    """Return the season string for the previous calendar year.
+
+    Intentionally not "current season": it always resolves to
+    ``<year - 1>-<year>``, i.e. the most recently completed season for runs
+    made between January and the start of the next season.
+
+    Returns:
+        Season string such as ``"2025-26"`` when run in 2026.
+    """
+    current_year = get_current_datetime().year
+    season = f"{current_year - 1}-{current_year % 100:02}"
+
+    return season
+
+
+def should_ingest(s3_key: str, db_writer: DBWriter) -> bool:
+    """Decide whether an S3 key still needs to be ingested.
+
+    Args:
+        s3_key: S3 key of the Parquet file the ingestion would produce.
+        db_writer: Writer used to look up previous successful ingestions.
+
+    Returns:
+        ``True`` if no successful ingestion with rows exists for the key,
+        ``False`` if it was already ingested and should be skipped.
+    """
+    latest_successful_ingestion = db_writer.get_latest_successful_ingestion(
+        s3_key=s3_key
+    )
+
+    return latest_successful_ingestion is None
+
+
+def reset_nba_session() -> None:
+    """Replace the shared ``nba_api`` HTTP session with a fresh one.
+
+    Drops accumulated cookies and connections so long-running fetch loops are
+    less likely to be throttled by stats.nba.com.
+    """
+    NBAStatsHTTP.set_session(session=requests.Session())

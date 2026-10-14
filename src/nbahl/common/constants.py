@@ -19,6 +19,9 @@ class BaseConstants:
         INTERVAL_MINUTES: Minutes between scheduled ingestion runs.
         MAX_TOTAL_FAILURE_NUMBER: Maximum number of individual game fetch
             failures tolerated across a full season run before aborting.
+        RESET_SESSION_AFTER_TOTAL_IDS: Number of IDs fetched (not HTTP
+            requests) after which the shared NBA Stats API session is replaced
+            with a fresh one.
     """
 
     PROJECT_ROOT = Path(__file__).parents[3]
@@ -186,6 +189,7 @@ class BaseConstants:
     SLEEP_SECONDS = 0.75
     INTERVAL_MINUTES = 10
     MAX_TOTAL_FAILURE_NUMBER = 10
+    RESET_SESSION_AFTER_TOTAL_IDS = 300
 
 
 class GameLogNBAApiSourceConstants:

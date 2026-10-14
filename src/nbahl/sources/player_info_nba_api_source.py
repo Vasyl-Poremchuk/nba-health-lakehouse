@@ -18,9 +18,9 @@ from nbahl.common.utils import (
     build_context_attributes,
     fetch_data_by_column_ids,
     get_column_ids,
+    get_season,
 )
-from nbahl.config import Settings
-from nbahl.pipelines import reconcile, run_ingestion
+from nbahl.pipelines import init_writers, reconcile, run_ingestion
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -201,14 +201,14 @@ def ingest_players_detail_info(
         num_trailing_parts=3,
     )
 
-    context = IngestionContext(
-        fetch_function=partial(
-            source.concat_players_detail_info, filepath=source_filepath
-        ),
-        **context_attributes,
-    )
-
     try:
+        context = IngestionContext(
+            fetch_function=partial(
+                source.concat_players_detail_info, filepath=source_filepath
+            ),
+            **context_attributes,
+        )
+
         run_ingestion(
             context=context, db_writer=db_writer, s3_writer=s3_writer
         )
@@ -217,28 +217,16 @@ def ingest_players_detail_info(
 
 
 if __name__ == "__main__":
-    season = "2025-26"
-    settings = Settings()
-    db_writer = DBWriter(settings=settings)
-    db_writer.create_table()
     source = PlayerInfoNBAApiSource(
         is_only_current_season=IsOnlyCurrentSeason.CURRENT_SEASON_ONLY,
         league_id=LeagueID.NBA,
     )
-    s3_writer = S3Writer(
-        bucket=f"nbahl-bronze-{settings.nbahl_env}",
-        profile_name=settings.profile_name.get_secret_value(),
-    )
+
+    writers = init_writers()
 
     all_players_info_filepath = ingest_all_players_info(
-        season=season,
-        source=source,
-        db_writer=db_writer,
-        s3_writer=s3_writer,
+        season=get_season(), source=source, **writers
     )
     ingest_players_detail_info(
-        source=source,
-        source_filepath=all_players_info_filepath,
-        db_writer=db_writer,
-        s3_writer=s3_writer,
+        source=source, source_filepath=all_players_info_filepath, **writers
     )

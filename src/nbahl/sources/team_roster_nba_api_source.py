@@ -18,10 +18,10 @@ from nbahl.common.utils import (
     build_context_attributes,
     fetch_data_by_column_ids_per_dataset,
     get_column_ids,
+    get_season,
     zip_datasets,
 )
-from nbahl.config import Settings
-from nbahl.pipelines import reconcile, run_ingestion_per_dataset
+from nbahl.pipelines import init_writers, reconcile, run_ingestion_per_dataset
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -138,18 +138,18 @@ def ingest_team_rosters_info(
         for attribute, value in context_attributes.items():
             partial_context.setdefault(f"{attribute}s", []).append(value)
 
-    context = IngestionContextPerDataset(
-        season=season,
-        datasets=TeamRosterNBAApiSourceConstants.TEAM_ROSTER_SOURCES,
-        fetch_function=partial(
-            source.concat_team_rosters_info,
-            filepath=source_filepath,
-            season=season,
-        ),
-        **partial_context,
-    )
-
     try:
+        context = IngestionContextPerDataset(
+            season=season,
+            datasets=TeamRosterNBAApiSourceConstants.TEAM_ROSTER_SOURCES,
+            fetch_function=partial(
+                source.concat_team_rosters_info,
+                filepath=source_filepath,
+                season=season,
+            ),
+            **partial_context,
+        )
+
         run_ingestion_per_dataset(
             context=context, db_writer=db_writer, s3_writer=s3_writer
         )
@@ -158,10 +158,6 @@ def ingest_team_rosters_info(
 
 
 if __name__ == "__main__":
-    season = "2025-26"
-    settings = Settings()
-    db_writer = DBWriter(settings=settings)
-    db_writer.create_table()
     source_context_attributes = build_context_attributes(
         source_name_prefix=PlayerInfoNBAApiSourceConstants.SOURCE_NAME_PREFIX,
         suffixes=[IsOnlyCurrentSeason.CURRENT_SEASON_ONLY, LeagueID.NBA],
@@ -169,12 +165,8 @@ if __name__ == "__main__":
         num_trailing_parts=3,
     )
     ingest_team_rosters_info(
-        season=season,
+        season=get_season(),
         league_id=LeagueID.NBA,
         source_filepath=Path(source_context_attributes["filepath"]),
-        db_writer=db_writer,
-        s3_writer=S3Writer(
-            bucket=f"nbahl-bronze-{settings.nbahl_env}",
-            profile_name=settings.profile_name.get_secret_value(),
-        ),
+        **init_writers(),
     )

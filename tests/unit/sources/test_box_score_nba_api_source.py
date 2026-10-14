@@ -9,7 +9,10 @@ from requests.exceptions import ConnectionError
 
 from nbahl.common.constants import BaseConstants, BoxScoreNBAApiSourceConstants
 from nbahl.common.enums import Period, Status
-from nbahl.common.exceptions import DataFrameEmptyError
+from nbahl.common.exceptions import (
+    DataFrameEmptyError,
+    GameIDsBySourceEmptyError,
+)
 from nbahl.common.models import BoxScoreContext
 from nbahl.sources.box_score_nba_api_source import (
     BoxScoreNBAApiSource,
@@ -320,6 +323,10 @@ def test_ingest_box_score_game_logs_success(
         new={(BoxScoreTraditionalV3, "traditional"): ["player_stats"]},
     )
     mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        return_value=True,
+    )
+    mocker.patch(
         "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
         return_value={"play-by-play-logs-0-0": ["0022500001"]},
     )
@@ -339,7 +346,9 @@ def test_ingest_box_score_game_logs_success(
     )
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.box_score_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
 
     ingest_box_score_game_logs(
         season="2025-26",
@@ -362,6 +371,7 @@ def test_ingest_box_score_game_logs_success(
     assert ingestion_run.status == Status.SUCCESS
     assert ingestion_run.error_message is None
     assert key == "2025-26/box-score-logs-0-0-traditional-player-stats.parquet"
+    mock_reconcile.assert_called_once()
 
 
 def test_ingest_box_score_game_logs_api_failure(
@@ -371,6 +381,10 @@ def test_ingest_box_score_game_logs_api_failure(
         BoxScoreNBAApiSourceConstants,
         "BOX_SCORE_SOURCES",
         new={(BoxScoreTraditionalV3, "traditional"): ["player_stats"]},
+    )
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        return_value=True,
     )
     mocker.patch(
         "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
@@ -383,7 +397,9 @@ def test_ingest_box_score_game_logs_api_failure(
     )
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.box_score_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
 
     with pytest.raises(ConnectionError, match="Timeout"):
         ingest_box_score_game_logs(
@@ -405,6 +421,7 @@ def test_ingest_box_score_game_logs_api_failure(
     assert ingestion_run.rows_in is None
     assert ingestion_run.status == Status.FAILURE
     assert ingestion_run.error_message == "Timeout"
+    mock_reconcile.assert_called_once()
 
 
 def test_ingest_box_score_game_logs_s3_failure(
@@ -414,6 +431,10 @@ def test_ingest_box_score_game_logs_s3_failure(
         BoxScoreNBAApiSourceConstants,
         "BOX_SCORE_SOURCES",
         new={(BoxScoreTraditionalV3, "traditional"): ["player_stats"]},
+    )
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        return_value=True,
     )
     mocker.patch(
         "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
@@ -435,7 +456,9 @@ def test_ingest_box_score_game_logs_s3_failure(
     )
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.box_score_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
     mock_s3_writer.write.side_effect = S3UploadFailedError(
         "Failed to upload nbahl/data/2025-26/box-score-logs-0-0-traditional-player-stats.parquet "
         "to nbahl/2025-26/box-score-logs-0-0-traditional-player-stats: "
@@ -463,6 +486,7 @@ def test_ingest_box_score_game_logs_s3_failure(
     assert ingestion_run.rows_in is None
     assert ingestion_run.status == Status.FAILURE
     assert "NoSuchBucket" in ingestion_run.error_message
+    mock_reconcile.assert_called_once()
 
 
 def test_ingest_box_score_game_logs_df_empty_failure(
@@ -472,6 +496,10 @@ def test_ingest_box_score_game_logs_df_empty_failure(
         BoxScoreNBAApiSourceConstants,
         "BOX_SCORE_SOURCES",
         new={(BoxScoreTraditionalV3, "traditional"): ["player_stats"]},
+    )
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        return_value=True,
     )
     mocker.patch(
         "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
@@ -484,7 +512,9 @@ def test_ingest_box_score_game_logs_df_empty_failure(
     )
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.box_score_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
 
     with pytest.raises(DataFrameEmptyError, match="DataFrame is empty"):
         ingest_box_score_game_logs(
@@ -506,6 +536,7 @@ def test_ingest_box_score_game_logs_df_empty_failure(
     assert ingestion_run.rows_in is None
     assert ingestion_run.status == Status.FAILURE
     assert ingestion_run.error_message == "DataFrame is empty"
+    mock_reconcile.assert_called_once()
 
 
 def test_ingest_box_score_game_logs_no_run_id(
@@ -517,6 +548,10 @@ def test_ingest_box_score_game_logs_no_run_id(
         new={(BoxScoreTraditionalV3, "traditional"): ["player_stats"]},
     )
     mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        return_value=True,
+    )
+    mocker.patch(
         "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
         return_value={"play-by-play-logs-0-0": ["0022500001"]},
     )
@@ -525,7 +560,9 @@ def test_ingest_box_score_game_logs_no_run_id(
     mock_db_writer.write.side_effect = RuntimeError(
         "INSERT INTO ingestion_runs returned no run_id"
     )
-    mocker.patch("nbahl.sources.box_score_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
 
     with pytest.raises(
         RuntimeError, match="INSERT INTO ingestion_runs returned no run_id"
@@ -539,3 +576,124 @@ def test_ingest_box_score_game_logs_no_run_id(
         )
 
     mock_db_writer.update.assert_not_called()
+    mock_reconcile.assert_called_once()
+
+
+def test_ingest_box_score_game_logs_should_not_ingest(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        BoxScoreNBAApiSourceConstants,
+        "BOX_SCORE_SOURCES",
+        new={(BoxScoreTraditionalV3, "traditional"): ["player_stats"]},
+    )
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
+        return_value={"play-by-play-logs-0-0": ["0022500001"]},
+    )
+    mock_should_ingest = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        return_value=False,
+    )
+    mock_run_ingestion_per_dataset = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.run_ingestion_per_dataset"
+    )
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
+
+    ingest_box_score_game_logs(
+        season="2025-26",
+        start_period=Period.ALL,
+        end_period=Period.ALL,
+        db_writer=mock_db_writer,
+        s3_writer=mock_s3_writer,
+    )
+
+    mock_should_ingest.assert_called_once_with(
+        s3_key="2025-26/box-score-logs-0-0-traditional-player-stats.parquet",
+        db_writer=mock_db_writer,
+    )
+    mock_run_ingestion_per_dataset.assert_not_called()
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )
+
+
+def test_ingest_box_score_game_logs_skips_only_ingested_datasets(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        BoxScoreNBAApiSourceConstants,
+        "BOX_SCORE_SOURCES",
+        new={
+            (BoxScoreTraditionalV3, "traditional"): [
+                "player_stats",
+                "team_stats",
+            ]
+        },
+    )
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
+        return_value={"play-by-play-logs-0-0": ["0022500001"]},
+    )
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.should_ingest",
+        side_effect=[False, True],
+    )
+    mock_run_ingestion_per_dataset = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.run_ingestion_per_dataset"
+    )
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
+
+    ingest_box_score_game_logs(
+        season="2025-26",
+        start_period=Period.ALL,
+        end_period=Period.ALL,
+        db_writer=mock_db_writer,
+        s3_writer=mock_s3_writer,
+    )
+
+    context = mock_run_ingestion_per_dataset.call_args.kwargs["context"]
+
+    mock_run_ingestion_per_dataset.assert_called_once()
+    assert context.datasets == ["team_stats"]
+    assert context.s3_keys == [
+        "2025-26/box-score-logs-0-0-traditional-team-stats.parquet"
+    ]
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )
+
+
+def test_ingest_box_score_game_logs_game_ids_failure_still_reconciles(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.get_game_ids_by_source",
+        side_effect=GameIDsBySourceEmptyError("No game IDs found"),
+    )
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.box_score_nba_api_source.reconcile"
+    )
+
+    with pytest.raises(GameIDsBySourceEmptyError):
+        ingest_box_score_game_logs(
+            season="2025-26",
+            start_period=Period.ALL,
+            end_period=Period.ALL,
+            db_writer=mock_db_writer,
+            s3_writer=mock_s3_writer,
+        )
+
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )

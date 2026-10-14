@@ -119,10 +119,16 @@ def test_ingest_league_game_logs_success(
         "get_game_logs",
         return_value=league_game_logs_00_t_regular_season_df,
     )
+    mocker.patch(
+        "nbahl.sources.game_log_nba_api_source.should_ingest",
+        return_value=True,
+    )
 
     mock_db_writer = mocker.MagicMock(spec=DBWriter)
     mock_s3_writer = mocker.MagicMock(spec=S3Writer)
-    mocker.patch("nbahl.sources.game_log_nba_api_source.reconcile")
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.game_log_nba_api_source.reconcile"
+    )
 
     ingest_league_game_logs(
         season="2025-26",
@@ -148,3 +154,42 @@ def test_ingest_league_game_logs_success(
     )
     assert ingestion_run.error_message is None
     assert key == "2025-26/league-game-logs-00-t-regular-season.parquet"
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )
+
+
+def test_ingest_league_game_logs_should_not_ingest(
+    mocker: MockerFixture,
+) -> None:
+    mock_should_ingest = mocker.patch(
+        "nbahl.sources.game_log_nba_api_source.should_ingest",
+        return_value=False,
+    )
+    mock_run_ingestion = mocker.patch(
+        "nbahl.sources.game_log_nba_api_source.run_ingestion"
+    )
+
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.game_log_nba_api_source.reconcile"
+    )
+
+    ingest_league_game_logs(
+        season="2025-26",
+        league_id=LeagueID.NBA,
+        player_or_team_abbreviation=PlayerOrTeamAbbreviation.TEAM,
+        season_type=SeasonTypeAllStar.REGULAR_SEASON,
+        db_writer=mock_db_writer,
+        s3_writer=mock_s3_writer,
+    )
+
+    mock_should_ingest.assert_called_once_with(
+        s3_key="2025-26/league-game-logs-00-t-regular-season.parquet",
+        db_writer=mock_db_writer,
+    )
+    mock_run_ingestion.assert_not_called()
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )

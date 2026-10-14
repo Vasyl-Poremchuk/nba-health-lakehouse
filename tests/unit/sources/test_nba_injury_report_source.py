@@ -513,6 +513,10 @@ def test_ingest_injury_reports_success(
     mocker.patch.object(
         NBAInjuryReportSource, "get_raw_filepaths", return_value=[]
     )
+    mocker.patch(
+        "nbahl.sources.nba_injury_report_source.should_ingest",
+        return_value=True,
+    )
     mock_run_raw = mocker.patch(
         "nbahl.sources.nba_injury_report_source.run_raw_ingestion"
     )
@@ -543,6 +547,10 @@ def test_ingest_injury_reports_raw_ingestion_raises_reconcile_still_runs(
 ) -> None:
     mocker.patch.object(
         NBAInjuryReportSource, "get_raw_filepaths", return_value=[]
+    )
+    mocker.patch(
+        "nbahl.sources.nba_injury_report_source.should_ingest",
+        return_value=True,
     )
     mocker.patch(
         "nbahl.sources.nba_injury_report_source.run_raw_ingestion",
@@ -576,6 +584,10 @@ def test_ingest_injury_reports_run_ingestion_raises_reconcile_still_runs(
     mocker.patch.object(
         NBAInjuryReportSource, "get_raw_filepaths", return_value=[]
     )
+    mocker.patch(
+        "nbahl.sources.nba_injury_report_source.should_ingest",
+        return_value=True,
+    )
     mocker.patch("nbahl.sources.nba_injury_report_source.run_raw_ingestion")
     mocker.patch(
         "nbahl.sources.nba_injury_report_source.run_ingestion",
@@ -597,3 +609,42 @@ def test_ingest_injury_reports_run_ingestion_raises_reconcile_still_runs(
         )
 
     mock_reconcile.assert_called_once()
+
+
+def test_ingest_injury_reports_should_not_ingest(
+    mocker: MockerFixture,
+) -> None:
+    mock_should_ingest = mocker.patch(
+        "nbahl.sources.nba_injury_report_source.should_ingest",
+        return_value=False,
+    )
+    mock_run_raw_ingestion = mocker.patch(
+        "nbahl.sources.nba_injury_report_source.run_raw_ingestion"
+    )
+    mock_run_ingestion = mocker.patch(
+        "nbahl.sources.nba_injury_report_source.run_ingestion"
+    )
+    mock_reconcile = mocker.patch(
+        "nbahl.sources.nba_injury_report_source.reconcile"
+    )
+    mock_db_writer = mocker.MagicMock(spec=DBWriter)
+    mock_s3_writer = mocker.MagicMock(spec=S3Writer)
+
+    ingest_injury_reports(
+        year=2026,
+        frequency="15min",
+        date_format="%Y-%m-%d_%I_%M%p",
+        db_writer=mock_db_writer,
+        s3_writer=mock_s3_writer,
+    )
+
+    mock_should_ingest.assert_called_once()
+    assert mock_should_ingest.call_args.kwargs["s3_key"].endswith(
+        "injuries/2026/parsed/injuries.parquet"
+    )
+    assert mock_should_ingest.call_args.kwargs["db_writer"] is mock_db_writer
+    mock_run_raw_ingestion.assert_not_called()
+    mock_run_ingestion.assert_not_called()
+    mock_reconcile.assert_called_once_with(
+        db_writer=mock_db_writer, s3_writer=mock_s3_writer
+    )

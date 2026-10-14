@@ -13,9 +13,12 @@ from nbahl.common.enums import (
 )
 from nbahl.common.models import IngestionContext
 from nbahl.common.retry import nba_api_retry
-from nbahl.common.utils import build_context_attributes
-from nbahl.config import Settings
-from nbahl.pipelines import reconcile, run_ingestion
+from nbahl.common.utils import build_context_attributes, should_ingest
+from nbahl.pipelines import (
+    ingest_by_season,
+    reconcile,
+    run_ingestion,
+)
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -86,6 +89,10 @@ def ingest_league_game_logs(
 ) -> None:
     """Build ingestion context for league game logs and run the pipeline.
 
+    Skips ingestion when the target S3 key already has a successful ingestion
+    (see ``should_ingest``). ``reconcile`` always runs, including when the run
+    is skipped or fails.
+
     Args:
         season: NBA season string (e.g. ``"2025-26"``).
         league_id: NBA API league identifier.
@@ -100,19 +107,25 @@ def ingest_league_game_logs(
         source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
         suffixes=[league_id, player_or_team_abbreviation, season_type],
     )
-    source = GameLogNBAApiSource(
-        league_id=league_id,
-        player_or_team_abbreviation=player_or_team_abbreviation,
-        season_type_all_star=season_type,
-    )
-
-    context = IngestionContext(
-        season=season,
-        fetch_function=partial(source.get_game_logs, season=season),
-        **context_attributes,
-    )
+    s3_key = str(context_attributes["s3_key"])
 
     try:
+        if not should_ingest(s3_key=s3_key, db_writer=db_writer):
+            log.info("Ingestion already completed", s3_key=s3_key)
+            return
+
+        source = GameLogNBAApiSource(
+            league_id=league_id,
+            player_or_team_abbreviation=player_or_team_abbreviation,
+            season_type_all_star=season_type,
+        )
+
+        context = IngestionContext(
+            season=season,
+            fetch_function=partial(source.get_game_logs, season=season),
+            **context_attributes,
+        )
+
         run_ingestion(
             context=context, db_writer=db_writer, s3_writer=s3_writer
         )
@@ -121,17 +134,9 @@ def ingest_league_game_logs(
 
 
 if __name__ == "__main__":
-    settings = Settings()
-    db_writer = DBWriter(settings=settings)
-    db_writer.create_table()
-    ingest_league_game_logs(
-        season="2025-26",
+    ingest_by_season(
+        function=ingest_league_game_logs,
         league_id=LeagueID.NBA,
         player_or_team_abbreviation=PlayerOrTeamAbbreviation.TEAM,
         season_type=SeasonTypeAllStar.REGULAR_SEASON,
-        db_writer=db_writer,
-        s3_writer=S3Writer(
-            bucket=f"nbahl-bronze-{settings.nbahl_env}",
-            profile_name=settings.profile_name.get_secret_value(),
-        ),
     )

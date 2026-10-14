@@ -24,9 +24,13 @@ from nbahl.common.exceptions import (
 )
 from nbahl.common.models import IngestionContext
 from nbahl.common.retry import nba_api_retry
-from nbahl.common.utils import get_s3_key, save_to_pdf
-from nbahl.config import Settings
-from nbahl.pipelines import reconcile, run_ingestion, run_raw_ingestion
+from nbahl.common.utils import get_s3_key, save_to_pdf, should_ingest
+from nbahl.pipelines import (
+    ingest_by_year,
+    reconcile,
+    run_ingestion,
+    run_raw_ingestion,
+)
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -585,7 +589,9 @@ def ingest_injury_reports(
     """Fetch, parse, and ingest NBA injury reports for the given year into S3
     and the database.
 
-    Runs two sequential ingestion stages. Stage 1 (``run_raw_ingestion``)
+    Skips both stages when the parsed Parquet file already has a successful
+    ingestion (see ``should_ingest``). Otherwise runs two sequential ingestion
+    stages. Stage 1 (``run_raw_ingestion``)
     downloads all PDF files for the season and bulk-uploads them to S3 as raw
     files. Stage 2 (``run_ingestion``) parses the downloaded PDFs into a single
     DataFrame, writes it as a Parquet file, and uploads it to S3. A
@@ -603,16 +609,20 @@ def ingest_injury_reports(
     source = NBAInjuryReportSource(
         year=year, frequency=frequency, date_format=date_format
     )
+    filepath = source.get_base_dir(dir_type=DirType.PARSED).joinpath(
+        f"{NBAInjuryReportSourceConstants.SOURCE_NAME}.parquet"
+    )
+    s3_key = get_s3_key(filepath=filepath, num_trailing_parts=4)
 
     try:
+        if not should_ingest(s3_key=s3_key, db_writer=db_writer):
+            log.info("Ingestion already completed", s3_key=s3_key)
+            return
+
         run_raw_ingestion(
             source=source, db_writer=db_writer, s3_writer=s3_writer
         )
 
-        filepath = source.get_base_dir(dir_type=DirType.PARSED).joinpath(
-            f"{NBAInjuryReportSourceConstants.SOURCE_NAME}.parquet"
-        )
-        s3_key = get_s3_key(filepath=filepath, num_trailing_parts=4)
         context = IngestionContext(
             source_name=NBAInjuryReportSourceConstants.SOURCE_NAME,
             s3_key=s3_key,
@@ -631,16 +641,17 @@ def ingest_injury_reports(
 
 
 if __name__ == "__main__":
-    settings = Settings()
-    db_writer = DBWriter(settings=settings)
-    db_writer.create_table()
-    ingest_injury_reports(
-        year=2026,
-        frequency="15min",
-        date_format="%Y-%m-%d_%I_%M%p",
-        db_writer=db_writer,
-        s3_writer=S3Writer(
-            bucket=f"nbahl-bronze-{settings.nbahl_env}",
-            profile_name=settings.profile_name.get_secret_value(),
-        ),
+    ingest_by_year(
+        function=ingest_injury_reports,
+        years_map={
+            2018: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2019: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2020: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2021: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2022: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2023: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2024: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2025: {"frequency": "1h", "date_format": "%Y-%m-%d_%I%p"},
+            2026: {"frequency": "15min", "date_format": "%Y-%m-%d_%I_%M%p"},
+        },
     )

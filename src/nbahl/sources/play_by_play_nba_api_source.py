@@ -18,9 +18,13 @@ from nbahl.common.utils import (
     build_context_attributes,
     fetch_data_by_column_ids,
     get_game_ids_by_source,
+    should_ingest,
 )
-from nbahl.config import Settings
-from nbahl.pipelines import reconcile, run_ingestion
+from nbahl.pipelines import (
+    ingest_by_season,
+    reconcile,
+    run_ingestion,
+)
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -145,6 +149,10 @@ def ingest_play_by_play_game_logs(
 ) -> None:
     """Build ingestion context for play-by-play logs and run the pipeline.
 
+    Skips ingestion when the target S3 key already has a successful ingestion
+    (see ``should_ingest``). ``reconcile`` always runs, including when the run
+    is skipped or fails.
+
     Args:
         season: NBA season string (e.g. ``"2025-26"``).
         start_period: First period to include in the play-by-play response.
@@ -157,19 +165,25 @@ def ingest_play_by_play_game_logs(
         source_name_prefix=PlayByPlayNBAApiSourceConstants.SOURCE_NAME_PREFIX,
         suffixes=[start_period, end_period],
     )
-    source = PlayByPlayNBAApiSource(
-        start_period=start_period,
-        end_period=end_period,
-        game_id_source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
-    )
-
-    context = IngestionContext(
-        season=season,
-        fetch_function=partial(source.get_game_logs, season=season),
-        **context_arguments,
-    )
+    s3_key = str(context_arguments["s3_key"])
 
     try:
+        if not should_ingest(s3_key=s3_key, db_writer=db_writer):
+            log.info("Ingestion already completed", s3_key=s3_key)
+            return
+
+        source = PlayByPlayNBAApiSource(
+            start_period=start_period,
+            end_period=end_period,
+            game_id_source_name_prefix=GameLogNBAApiSourceConstants.SOURCE_NAME_PREFIX,
+        )
+
+        context = IngestionContext(
+            season=season,
+            fetch_function=partial(source.get_game_logs, season=season),
+            **context_arguments,
+        )
+
         run_ingestion(
             context=context, db_writer=db_writer, s3_writer=s3_writer
         )
@@ -178,16 +192,8 @@ def ingest_play_by_play_game_logs(
 
 
 if __name__ == "__main__":
-    settings = Settings()
-    db_writer = DBWriter(settings=settings)
-    db_writer.create_table()
-    ingest_play_by_play_game_logs(
-        season="2025-26",
+    ingest_by_season(
+        function=ingest_play_by_play_game_logs,
         start_period=Period.ALL,
         end_period=Period.ALL,
-        db_writer=db_writer,
-        s3_writer=S3Writer(
-            bucket=f"nbahl-bronze-{settings.nbahl_env}",
-            profile_name=settings.profile_name.get_secret_value(),
-        ),
     )

@@ -193,3 +193,41 @@ class DBWriter:
             stale_rows = cur.fetchall()
 
         return stale_rows
+
+    def get_latest_successful_ingestion(
+        self, s3_key: str
+    ) -> dict[str, str] | None:
+        """Return the most recent successful, non-empty ingestion for a key.
+
+        Only runs with ``SUCCESS`` status, ``rows_in > 0`` and a set
+        ``ended_at`` count, so failed, pending and empty runs are retried.
+
+        Args:
+            s3_key: S3 key of the Parquet file to look up.
+
+        Returns:
+            Dict with the ``s3_key`` of the latest matching run, or ``None``
+            if the key has never been ingested successfully.
+        """
+        with self._connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                t"""
+                SELECT
+                    s3_key
+                FROM
+                    ingestion_runs
+                WHERE
+                    s3_key = {s3_key}
+                    AND status = {Status.SUCCESS}
+                    AND rows_in > 0
+                    AND ended_at IS NOT NULL
+                ORDER BY
+                    ended_at DESC
+                LIMIT
+                    1;
+                """
+            )
+
+            latest_successful_ingestion = cur.fetchone()
+
+            return latest_successful_ingestion

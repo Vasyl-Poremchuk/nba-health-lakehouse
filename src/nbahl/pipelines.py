@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import structlog
 
@@ -13,11 +14,13 @@ from nbahl.common.models import (
     SuccessCommitContext,
 )
 from nbahl.common.utils import (
+    build_seasons,
     commit_failure,
     commit_success,
     get_current_datetime,
     get_s3_key,
 )
+from nbahl.config import Settings
 from nbahl.writers.db_writer import DBWriter
 from nbahl.writers.s3_writer import S3Writer
 
@@ -311,3 +314,76 @@ def reconcile(db_writer: DBWriter, s3_writer: S3Writer) -> None:
         success_count=len(success_ids),
         failure_count=len(failure_ids),
     )
+
+
+class Writers(TypedDict):
+    """Keyword arguments accepted by every ``ingest_*`` function for writers."""
+
+    db_writer: DBWriter
+    s3_writer: S3Writer
+
+
+def init_writers() -> Writers:
+    """Build the database and S3 writers from environment settings.
+
+    Also ensures the ``ingestion_runs`` table exists.
+
+    Returns:
+        Mapping with ``db_writer`` and ``s3_writer`` keys, ready to be
+        unpacked as keyword arguments into an ``ingest_*`` function.
+    """
+    settings = Settings()
+    db_writer = DBWriter(settings=settings)
+    s3_writer = S3Writer(
+        bucket=f"nbahl-bronze-{settings.nbahl_env}",
+        profile_name=settings.profile_name.get_secret_value(),
+    )
+    db_writer.create_table()
+
+    return Writers(db_writer=db_writer, s3_writer=s3_writer)
+
+
+def ingest_by_season(
+    function: Callable[..., None],
+    start_year: int = 2018,
+    end_year: int = get_current_datetime().year,
+    **function_attributes: Any,
+) -> None:
+    """Run an ingest function once per season, stopping at the first error.
+
+    Writers are created once and shared across all seasons. Any exception
+    raised by ``function`` propagates and aborts the remaining seasons.
+
+    Args:
+        function: Ingest function accepting ``season``, ``db_writer`` and
+            ``s3_writer`` keyword arguments plus ``function_attributes``.
+        start_year: First season start year (inclusive).
+        end_year: Season start year to stop at (exclusive).
+        **function_attributes: Extra keyword arguments forwarded to
+            ``function`` on every call.
+    """
+    seasons = build_seasons(start_year=start_year, end_year=end_year)
+    writers = init_writers()
+
+    for season in seasons:
+        function(season=season, **writers, **function_attributes)
+
+
+def ingest_by_year(
+    function: Callable[..., None], years_map: dict[int, dict[str, str]]
+) -> None:
+    """Run an ingest function once per year, stopping at the first error.
+
+    Writers are created once and shared across all years. Any exception
+    raised by ``function`` propagates and aborts the remaining years.
+
+    Args:
+        function: Ingest function accepting ``year``, ``db_writer`` and
+            ``s3_writer`` keyword arguments plus the per-year attributes.
+        years_map: Mapping of year to the extra keyword arguments forwarded
+            to ``function`` for that year.
+    """
+    writers = init_writers()
+
+    for year, function_attributes in years_map.items():
+        function(year=year, **writers, **function_attributes)

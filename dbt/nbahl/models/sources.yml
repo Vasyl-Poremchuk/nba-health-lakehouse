@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Raw NBA regular-season game logs at team-game grain
+    database: "{{ target.database }}"
+    schema: bronze
+    tables:
+      - name: league_game_logs_00_t_regular_season

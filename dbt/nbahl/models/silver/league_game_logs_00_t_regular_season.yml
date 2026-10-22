@@ -1,0 +1,410 @@
+models:
+  - name: league_game_logs_00_t_regular_season
+    description: NBA regular-season game logs at team-game grain, with one row per team per game and box-score team totals (shooting, rebounds, assists, etc.)
+    config:
+      contract:
+        enforced: true
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [season_sk, team_sk, game_sk]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "fgm <= fga and fg3m <= fg3a and ftm <= fta and fg3m <= fgm and fg3a <= fga"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "year(game_date) between cast(split_part(season, '-', 1) as int) and cast(split_part(season, '-', 1) as int) + 1"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "(wl = 'W' and plus_minus > 0) or (wl = 'L' and plus_minus < 0)"
+
+    columns:
+      - name: season_sk
+        description: This is a surrogate key for a season, hashed from season_id
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 64
+
+      - name: season_id
+        description: This is a unique identifier for the season, made of a season-type prefix (2 for regular season) followed by the season's start year, e.g. 22025
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 5
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= concat('2', split_part(season, '-', 1))"
+
+      - name: season
+        description: This is the NBA season in which the game took place, e.g. 2025-26
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 7
+
+      - name: team_sk
+        description: This is a surrogate key for a team
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 64
+
+      - name: team_id
+        description: This is a unique identifier for the team
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 10
+
+      - name: team_abbreviation
+        description: This is the abbreviation of the team's name, e.g. LAL
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 3
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= left(matchup, 3)"
+
+      - name: team_name
+        description: This is the full name of the team
+        data_type: string
+        data_tests:
+          - not_null
+
+      - name: game_sk
+        description: This is a surrogate key for a team's game, hashed from game_id
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 64
+
+      - name: game_id
+        description: This is a unique identifier for the game, shared by both teams that played in it
+        data_type: string
+        data_tests:
+          - not_null
+          - length_equal_to:
+              arguments:
+                expected_length: 10
+
+      - name: game_date
+        description: This is the date when the game took place
+        data_type: date
+        data_tests:
+          - not_null
+
+      - name: matchup
+        description: This shows the game from the team's perspective, formatted as "TEAM vs. OPP" for home games and "TEAM @ OPP" for away games
+        data_type: string
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: >-
+                  rlike r'^[A-Z]{3} (vs\.|@) [A-Z]{3}$'
+
+      - name: wl
+        description: This is the result of the game for the team, W for a win or L for a loss
+        data_type: string
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['W', 'L']
+
+      - name: min
+        quote: true
+        data_type: smallint
+        description: This is the total number of minutes played by all of the team's players combined (240 in a regulation game, more if the game went to overtime)
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 240
+                max_value: 340
+              config:
+                severity: warn
+
+      - name: fgm
+        description: This counts every successful shot a team scores from the floor during live play (both 2-point and 3-point shots)
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 20
+                max_value: 65
+              config:
+                severity: warn
+
+      - name: fga
+        description: This is the total number of shots a team takes from the floor during live play (both 2-point and 3-point shots)
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 60
+                max_value: 125
+              config:
+                severity: warn
+
+      - name: fg_pct
+        description: This is the field goal percentage (fgm / fga), expressed as a fraction between 0 and 1, or NULL when there were no attempts
+        data_type: decimal(4,3)
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<=> round(fgm / nullif(fga, 0), 3)"
+
+      - name: fg3m
+        description: This is the total number of 3-point shots a team has successfully scored during a game
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 30
+              config:
+                severity: warn
+
+      - name: fg3a
+        description: This is the total number of shots a team has taken from behind the 3-point arc during a game
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 10
+                max_value: 70
+              config:
+                severity: warn
+
+      - name: fg3_pct
+        description: This is the 3-point percentage (fg3m / fg3a), expressed as a fraction between 0 and 1, or NULL when there were no attempts
+        data_type: decimal(4,3)
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<=> round(fg3m / nullif(fg3a, 0), 3)"
+
+      - name: ftm
+        description: This counts the total number of free throws a team has successfully scored during a game
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 50
+              config:
+                severity: warn
+
+      - name: fta
+        description: This is the total number of free throws a team has attempted during a game
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 60
+              config:
+                severity: warn
+
+      - name: ft_pct
+        description: This is the free-throw percentage (ftm / fta), expressed as a fraction between 0 and 1, or NULL when there were no attempts
+        data_type: decimal(4,3)
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<=> round(ftm / nullif(fta, 0), 3)"
+
+      - name: oreb
+        description: This is the total number of offensive rebounds, i.e. rebounds of the team's own missed shots
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 30
+              config:
+                severity: warn
+
+      - name: dreb
+        description: This is the total number of defensive rebounds, i.e. rebounds of the opponent's missed shots
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 10
+                max_value: 60
+              config:
+                severity: warn
+
+      - name: reb
+        description: This is the total number of rebounds (oreb + dreb)
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 20
+                max_value: 75
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= oreb + dreb"
+
+      - name: ast
+        description: This is the total number of assists, i.e. passes that directly lead to a made basket
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 5
+                max_value: 50
+              config:
+                severity: warn
+
+      - name: stl
+        description: This is the total number of steals, i.e. times the team took the ball away from the opponent
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 25
+              config:
+                severity: warn
+
+      - name: blk
+        description: This is the total number of blocks, i.e. opponent shot attempts that the team deflected
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 20
+              config:
+                severity: warn
+
+      - name: tov
+        description: This is the total number of turnovers, i.e. times the team lost possession of the ball to the opponent without taking a shot
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 35
+              config:
+                severity: warn
+
+      - name: pf
+        description: This is the total number of personal fouls committed by the team
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 40
+              config:
+                severity: warn
+
+      - name: pts
+        description: This is the total number of points scored by the team
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 65
+                max_value: 180
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= 2 * fgm + fg3m + ftm"
+
+      - name: plus_minus
+        description: This is the point differential of the game (team points minus opponent points), positive for a win and negative for a loss
+        data_type: smallint
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -75
+                max_value: 75
+              config:
+                severity: warn
+
+      - name: _bronze_path
+        description: This is the path of the bronze-layer file the row was loaded from
+        data_type: string
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "like '%/' || season || '/' || _source_name || '%'"
+
+      - name: _source_name
+        description: This is the logical name of the source the row came from, e.g. league-game-logs-00-t-regular-season
+        data_type: string
+        data_tests:
+          - not_null
+
+      - name: _ingested_at
+        description: This is the timestamp when the row was ingested into the bronze layer
+        data_type: timestamp
+        data_tests:
+          - not_null
+
+      - name: _processed_at
+        description: This is the timestamp when the row was processed into the silver layer
+        data_type: timestamp
+        data_tests:
+          - not_null

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "boto3>=1.43.26",
+    "dbt-databricks>=1.10.9",
     "html5lib>=1.1",
     "lxml>=6.1.1",
     "nba-api>=1.11.4",

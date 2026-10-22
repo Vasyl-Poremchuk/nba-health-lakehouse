@@ -40,3 +40,7 @@ up:  ## Create and start containers
 
 down:  ## Stop and remove containers, networks, named volumes, and images
 	docker compose down --volumes --rmi all
+
+dbt-build: ENV ?= dev
+dbt-build:  ## Move to dbt/nbahl directory, run all models, and their tests in the specified env (usage: make dbt-build ENV=dev)
+	cd dbt/nbahl && dbt build -t ${ENV}

@@ -1,5 +1,5 @@
 # Treat the following commands as real commands, even if files with same names exist
-.PHONY: help setup lint format clean test adr typecheck check up down
+.PHONY: help setup lint format clean test adr typecheck check up down dbt-build
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -43,4 +43,4 @@ down:  ## Stop and remove containers, networks, named volumes, and images
 
 dbt-build: ENV ?= dev
 dbt-build:  ## Move to dbt/nbahl directory, run all models, and their tests in the specified env (usage: make dbt-build ENV=dev)
-	cd dbt/nbahl && dbt build -t ${ENV}
+	cd dbt/nbahl && uv run dbt build -t ${ENV}

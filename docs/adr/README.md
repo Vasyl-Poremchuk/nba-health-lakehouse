@@ -42,3 +42,4 @@ Files are named `NNNN-short-title.md` with a zero-padded sequential number.
 | [0003](0003-aws-access-method.md) | AWS human/CLI access method | Accepted |
 | [0004](0004-terraform-layout.md) | Terraform layout | Accepted |
 | [0005](0005-databricks-s3-integration.md) | Databricks S3 Integration | Accepted |
+| [0006](0006-dbt-databricks-silver-transformations.md) | dbt on Databricks for Silver Transformations | Accepted |

@@ -1,0 +1,29 @@
+name: 'nbahl'
+version: '1.0.0'
+
+profile: 'nbahl'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+
+models:
+  nbahl:
+    silver:
+      +schema: silver
+      +materialized: table
+      +file_format: delta
+      +persist_docs:
+        relation: true
+        columns: true
+
+flags:
+  use_materialization_v2: true
